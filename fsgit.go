@@ -43,8 +43,11 @@ func gitHashObject(repo string, src io.Reader) (string, error) {
 }
 
 func gitInit(repo string) error {
-	_, err := git(repo, "", nil, "init", "--nare", repo)
-	return err
+	_, err := git(repo, "", nil, "init", "--bare", repo)
+	if err != nil {
+		return fmt.Errorf("git init: %v", err)
+	}
+	return nil
 }
 
 // tar2git decodes a tar stream from src, then encodes it into a new git commit
