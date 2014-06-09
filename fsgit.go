@@ -28,9 +28,11 @@ func git(repo, idx string, stdin io.Reader, args ...string) (string, error) {
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
+	cmd.Stderr = os.Stderr
 	if idx != "" {
 		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+idx)
 	}
+	fmt.Printf("# %s %s\n", strings.Join(cmd.Env, " "), strings.Join(cmd.Args, " "))
 	out, err := cmd.Output()
 	return string(out), err
 }
