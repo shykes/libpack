@@ -22,28 +22,36 @@ func main() {
 	fmt.Println(result)
 }
 
-func git(repo string, stdin io.Reader, args ...string) (string, error) {
+func git(repo, idx string, stdin io.Reader, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"--git-dir", repo}, args...)...)
 	if stdin != nil {
 		cmd.Stdin = stdin
+	}
+	if idx != "" {
+		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE=" + idx)
 	}
 	out, err := cmd.Output()
 	return string(out), err
 }
 
 func gitHashObject(repo string, src io.Reader) (string, error) {
-	out, err := git(repo, src, "hash-object", "-w", "--stdin")
+	out, err := git(repo, "", src, "hash-object", "-w", "--stdin")
 	if err != nil {
 		return "", err
 	}
 	return strings.Trim(string(out), " \t\r\n"), nil
 }
 
+func gitInit(repo string) error {
+	_, err := git(repo, "", nil, "init", "--nare", repo)
+	return err
+}
+
 // tar2git decodes a tar stream from src, then encodes it into a new git commit
 // such that the full tar stream can be reconsistuted from the git data alone.
 // It retusn hash of the git commit, or an error if any.
 func tar2git(src io.Reader, repo string) (hash string, err error) {
-	if _, err := git(repo, nil, "init", "--bare", repo); err != nil {
+	if err := gitInit(repo); err != nil {
 		return "", err
 	}
 	tree := make(map[string]string)
