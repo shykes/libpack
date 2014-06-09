@@ -23,7 +23,7 @@ func main() {
 	fmt.Println(result)
 }
 
-func git(repo, idx string, stdin io.Reader, args ...string) (string, error) {
+func git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"--git-dir", repo}, args...)...)
 	if stdin != nil {
 		cmd.Stdin = stdin
@@ -32,13 +32,16 @@ func git(repo, idx string, stdin io.Reader, args ...string) (string, error) {
 	if idx != "" {
 		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+idx)
 	}
+	if worktree != "" {
+		cmd.Env = append(cmd.Env, "GIT_WORK_TREE="+worktree)
+	}
 	fmt.Printf("# %s %s\n", strings.Join(cmd.Env, " "), strings.Join(cmd.Args, " "))
 	out, err := cmd.Output()
 	return string(out), err
 }
 
 func gitHashObject(repo string, src io.Reader) (string, error) {
-	out, err := git(repo, "", src, "hash-object", "-w", "--stdin")
+	out, err := git(repo, "", "", src, "hash-object", "-w", "--stdin")
 	if err != nil {
 		return "", fmt.Errorf("git hash-object: %v", err)
 	}
@@ -46,15 +49,32 @@ func gitHashObject(repo string, src io.Reader) (string, error) {
 }
 
 func gitWriteTree(repo, idx string) (string, error) {
-	out, err := git(repo, idx, nil, "write-tree")
+	out, err := git(repo, idx, "", nil, "write-tree")
 	if err != nil {
 		return "", fmt.Errorf("git write-tree: %v", err)
 	}
 	return strings.Trim(string(out), " \t\r\n"), nil
 }
 
+// gitReadTree calls 'git read-tree' with the following settings:
+//	repo is the path to a git repo (bare)
+//	idx is the path to the git index file to update
+//	hash is the hash of the tree object to add
+//	prefix is the prefix at which the tree should be added to the index file
+func gitReadTree(repo, idx, prefix, hash string) error {
+	worktree, err := ioutil.TempDir("", "tmpwd")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(worktree)
+	if _, err := git(repo, idx, worktree, nil, "read-tree", "--prefix", prefix, hash); err != nil {
+		return fmt.Errorf("git-read-tree: %v", err)
+	}
+	return nil
+}
+
 func gitInit(repo string) error {
-	_, err := git(repo, "", nil, "init", "--bare", repo)
+	_, err := git(repo, "", "", nil, "init", "--bare", repo)
 	if err != nil {
 		return fmt.Errorf("git init: %v", err)
 	}
@@ -145,13 +165,13 @@ func (tree Tree) Store(repo string) (hash string, err error) {
 		}
 		fmt.Printf("[%p]    -> %s tree stored at %s\n", tree, prefix, subtreehash)
 		// Add the subtree at `prefix/` in the current tree
-		if _, err := git(repo, idx, nil, "read-tree", "--prefix", prefix, subtreehash); err != nil {
+		if err := gitReadTree(repo, idx, prefix, subtreehash); err != nil {
 			return "", err
 		}
 	}
 	for key, hash := range blobs {
 		fmt.Printf("[%p] Storing blob %s at %s\n", tree, hash, key)
-		if _, err := git(repo, idx, nil, "update-index", "--add", "--cacheinfo", "100644", hash, key); err != nil {
+		if _, err := git(repo, idx, "", nil, "update-index", "--add", "--cacheinfo", "100644", hash, key); err != nil {
 			return "", err
 		}
 	}
