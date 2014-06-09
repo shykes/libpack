@@ -96,15 +96,7 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 			}
 		}
 	}
-	tree.Walk(0,
-		func(k string, v Tree) {
-			fmt.Printf("[TREE] %40.40s %s\n", "", k)
-		},
-		func(k, v string) {
-			fmt.Printf("[BLOB] %s %s\n", v, k)
-		},
-	)
-
+	tree.Pretty(os.Stdout)
 	// Commit the new tree
 	/*
 		idx, err := ioutil.TempFile("", "tmpidx")
@@ -123,6 +115,17 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 }
 
 type Tree map[string]interface{}
+
+func (tree Tree) Pretty(out io.Writer) {
+	tree.Walk(0,
+		func(k string, v Tree) {
+			fmt.Fprintf(out, "[TREE] %40.40s %s\n", "", k)
+		},
+		func(k, v string) {
+			fmt.Fprintf(out, "[BLOB] %s %s\n", v, k)
+		},
+	)
+}
 
 func (tree Tree) Walk(depth int, onTree func(string, Tree), onString func(string, string)) {
 	for k, v := range tree {
