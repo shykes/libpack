@@ -96,7 +96,7 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 			}
 		}
 	}
-	tree.Walk(
+	tree.Walk(0,
 		func(k string, v Tree) {
 			fmt.Printf("[TREE] %40.40s %s\n", "", k)
 		},
@@ -124,7 +124,7 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 
 type Tree map[string]interface{}
 
-func (tree Tree) Walk(onTree func(string, Tree), onString func(string, string)) {
+func (tree Tree) Walk(depth int, onTree func(string, Tree), onString func(string, string)) {
 	for k, v := range tree {
 		vString, isString := v.(string)
 		if isString && onString != nil {
@@ -134,7 +134,15 @@ func (tree Tree) Walk(onTree func(string, Tree), onString func(string, string)) 
 		vTree, isTree := v.(Tree)
 		if isTree && onTree != nil {
 			onTree(k, vTree)
+			if depth == 1 {
+				continue
+			}
+			newDepth := depth - 1
+			if newDepth < 0 {
+				newDepth = 0
+			}
 			vTree.Walk(
+				newDepth,
 				func(subkey string, subtree Tree) {
 					onTree(path.Join(k, subkey), subtree)
 				},
