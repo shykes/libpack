@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+	_ "io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -57,7 +58,8 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 	if err := gitInit(repo); err != nil {
 		return "", err
 	}
-	tree := make(map[string]string)
+
+	tree := make(Tree)
 	tr := tar.NewReader(src)
 	for {
 		hdr, err := tr.Next()
@@ -78,7 +80,9 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 		}
 		metaDst := path.Join("_fs_meta", fmt.Sprintf("%0x", sha1.Sum([]byte(hdr.Name))))
 		fmt.Printf("    ---> storing metadata in %s\n", metaDst)
-		tree[metaDst] = metaHash
+		if err := tree.Update(metaDst, metaHash); err != nil {
+			return "", err
+		}
 		// FIXME: git can carry symlinks as well
 		if hdr.Typeflag == tar.TypeReg {
 			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
@@ -87,14 +91,91 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 				return "", err
 			}
 			dataDst := path.Join("_fs_data", hdr.Name)
-			tree[dataDst] = dataHash
+			if err := tree.Update(dataDst, dataHash); err != nil {
+				return "", err
+			}
 		}
 	}
-	fmt.Printf("Ready to write %d items to new tree:\n", len(tree))
-	for key, hash := range tree {
-		fmt.Printf("    %s  %s\n", hash, key)
+	tree.Walk(
+		func(k string, v Tree) {
+			fmt.Printf("[TREE] %s\n", k)
+		},
+		func(k, v string) {
+			fmt.Printf("[BLOB] %s %s\n", k, v)
+		},
+	)
+
+	// Commit the new tree
+	/*
+		idx, err := ioutil.TempFile("", "tmpidx")
+		if err != nil {
+			return "", err
+		}
+		for key, hash := range tree {
+
+			_, err := git(repo, idx.Name(), nil, "update-index", "--add", "--cacheinfo")
+			if err != nil {
+				return "", err
+			}
+		}
+	*/
+	return "", nil
+}
+
+type Tree map[string]interface{}
+
+func (tree Tree) Walk(onTree func(string, Tree), onString func(string, string)) {
+	for k, v := range tree {
+		vString, isString := v.(string)
+		if isString && onString != nil {
+			onString(k, vString)
+			continue
+		}
+		vTree, isTree := v.(Tree)
+		if isTree && onTree != nil {
+			onTree(k, vTree)
+			vTree.Walk(
+				func(subkey string, subtree Tree) {
+					onTree(path.Join(k, subkey), subtree)
+				},
+				func(subkey string, subval string) {
+					onString(path.Join(k, subkey), subval)
+				},
+			)
+			continue
+		}
 	}
-	return
+}
+
+func (tree Tree) Update(key string, val interface{}) error {
+	key = path.Clean(key)
+	key = strings.TrimLeft(key, "/") // Remove trailing slashes
+	base, leaf := path.Split(key)
+	if base == "" {
+		if valString, ok := val.(string); ok {
+			tree[leaf] = valString
+			return nil
+		}
+		valTree, ok := val.(Tree)
+		if !ok {
+			return fmt.Errorf("value must be a string or subtree")
+		}
+		if old, exists := tree[leaf]; exists {
+			oldTree, isTree := old.(Tree)
+			if !isTree {
+				return fmt.Errorf("key %s has existing value of unexpected type: %#v", key, old)
+			}
+			for k, v := range valTree {
+				oldTree.Update(k, v)
+			}
+			return nil
+		}
+		tree[leaf] = val
+		return nil
+	}
+	subtree := make(Tree)
+	subtree[leaf] = val
+	return tree.Update(base, subtree)
 }
 
 func headerReader(hdr *tar.Header) (io.Reader, error) {
