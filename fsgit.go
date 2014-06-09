@@ -98,10 +98,10 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 	}
 	tree.Walk(
 		func(k string, v Tree) {
-			fmt.Printf("[TREE] %s\n", k)
+			fmt.Printf("[TREE] %40.40s %s\n", "", k)
 		},
 		func(k, v string) {
-			fmt.Printf("[BLOB] %s %s\n", k, v)
+			fmt.Printf("[BLOB] %s %s\n", v, k)
 		},
 	)
 
