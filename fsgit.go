@@ -5,7 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
-	_ "io/ioutil"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -40,7 +40,15 @@ func git(repo, idx string, stdin io.Reader, args ...string) (string, error) {
 func gitHashObject(repo string, src io.Reader) (string, error) {
 	out, err := git(repo, "", src, "hash-object", "-w", "--stdin")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("git hash-object: %v", err)
+	}
+	return strings.Trim(string(out), " \t\r\n"), nil
+}
+
+func gitWriteTree(repo, idx string) (string, error) {
+	out, err := git(repo, idx, nil, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("git write-tree: %v", err)
 	}
 	return strings.Trim(string(out), " \t\r\n"), nil
 }
@@ -99,24 +107,56 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 		}
 	}
 	tree.Pretty(os.Stdout)
-	// Commit the new tree
-	/*
-		idx, err := ioutil.TempFile("", "tmpidx")
-		if err != nil {
-			return "", err
-		}
-		for key, hash := range tree {
-
-			_, err := git(repo, idx.Name(), nil, "update-index", "--add", "--cacheinfo")
-			if err != nil {
-				return "", err
-			}
-		}
-	*/
-	return "", nil
+	return tree.Store(repo)
 }
 
 type Tree map[string]interface{}
+
+func (tree Tree) Store(repo string) (hash string, err error) {
+	defer func() {
+		if err != nil {
+			fmt.Printf("[%p] Stored at %s\n", tree, hash)
+		}
+	}()
+	// Initialize new index file
+	tmp, err := ioutil.TempDir("", "tmpidx")
+	if err != nil {
+		return "", err
+	}
+	idx := path.Join(tmp, "idx")
+	fmt.Printf("[%p] index file is at %s\n", tree, idx)
+	// defer os.RemoveAll(idx)
+	blobs := make(map[string]string)
+	subtrees := make(map[string]Tree)
+	tree.Walk(1,
+		func(k string, subtree Tree) {
+			subtrees[k] = subtree
+		},
+		func(k string, blob string) {
+			blobs[k] = blob
+		},
+	)
+	for prefix, subtree := range subtrees {
+		fmt.Printf("[%p] Recursively storing sub-tree %s (%p)\n", tree, prefix, subtree)
+		// Store the subtree
+		subtreehash, err := subtree.Store(repo)
+		if err != nil {
+			return "", err
+		}
+		fmt.Printf("[%p]    -> %s tree stored at %s\n", tree, prefix, subtreehash)
+		// Add the subtree at `prefix/` in the current tree
+		if _, err := git(repo, idx, nil, "read-tree", "--prefix", prefix, subtreehash); err != nil {
+			return "", err
+		}
+	}
+	for key, hash := range blobs {
+		fmt.Printf("[%p] Storing blob %s at %s\n", tree, hash, key)
+		if _, err := git(repo, idx, nil, "update-index", "--add", "--cacheinfo", "100644", hash, key); err != nil {
+			return "", err
+		}
+	}
+	return gitWriteTree(repo, idx)
+}
 
 func (tree Tree) Pretty(out io.Writer) {
 	tree.Walk(0,
