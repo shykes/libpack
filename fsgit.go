@@ -1,112 +1,74 @@
 package main
 
 import (
-	"log"
+	"crypto/sha1"
+	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"os"
-	"path/filepath"
-	"strings"
-	"syscall"
-	"github.com/dotcloud/docker/pkg/system"
+	"path"
+
 	"github.com/dotcloud/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
 
 func main() {
-	target := os.Args[1]
-	tw := tar.NewWriter(os.Stdout)
-	filepath.Walk(target, func(filePath string, f os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relFilePath, err := filepath.Rel(target, filePath)
-		if err != nil {
-			return err
-		}
-		if err := addTarFile(filePath, relFilePath, tw, false); err != nil {
-			return err
-		}
-		return nil
-	})
-	/*
-	if err := addTarFile(target, target, tw, false); err != nil {
+	result, err := tar2git(os.Stdin, "")
+	if err != nil {
 		log.Fatal(err)
 	}
-	*/
-	if err := tw.Close(); err != nil {
-		log.Fatal(err)
-	}
+	fmt.Println(result)
 }
 
-func addTarFile(path, name string, tw *tar.Writer, writeData bool) error {
-	fi, err := os.Lstat(path)
+// tar2git decodes a tar stream from src, then encodes it into a new git commit
+// such that the full tar stream can be reconsistuted from the git data alone.
+// It retusn hash of the git commit, or an error if any.
+func tar2git(src io.Reader, repo string) (hash string, err error) {
+	// FIXME: write straight to the git object filesystem
+	tmp, err := ioutil.TempDir("", "tmp")
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	link := ""
-	if fi.Mode()&os.ModeSymlink != 0 {
-		if link, err = os.Readlink(path); err != nil {
-			return err
+	hash = tmp
+	tr := tar.NewReader(src)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
 		}
-	}
-
-	hdr, err := tar.FileInfoHeader(fi, link)
-	if err != nil {
-		return err
-	}
-
-	if fi.IsDir() && !strings.HasSuffix(name, "/") {
-		name = name + "/"
-	}
-
-	hdr.Name = name
-
-	stat, ok := fi.Sys().(*syscall.Stat_t)
-	if ok {
-		// Currently go does not fill in the major/minors
-		if stat.Mode&syscall.S_IFBLK == syscall.S_IFBLK ||
-			stat.Mode&syscall.S_IFCHR == syscall.S_IFCHR {
-			hdr.Devmajor = int64(major(uint64(stat.Rdev)))
-			hdr.Devminor = int64(minor(uint64(stat.Rdev)))
+		if err != nil {
+			return "", err
 		}
-
-	}
-
-	capability, _ := system.Lgetxattr(path, "security.capability")
-	if capability != nil {
-		hdr.Xattrs = make(map[string]string)
-		hdr.Xattrs["security.capability"] = string(capability)
-	}
-
-	if !writeData {
-		hdr.Size = 0
-	}
-	if err := tw.WriteHeader(hdr); err != nil {
-		return err
-	}
-
-	if writeData {
+		fmt.Printf("[META] %s\n", hdr.Name)
+		metaDst := path.Join(tmp, "_fs_meta", fmt.Sprintf("%0x", sha1.Sum([]byte(hdr.Name))))
+		fmt.Printf("    ---> storing metadata in %s\n", metaDst)
+		if err := os.MkdirAll(path.Dir(metaDst), 0700); err != nil {
+			return "", err
+		}
+		metaFile, err := os.OpenFile(metaDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0700)
+		if err != nil {
+			return "", err
+		}
+		metaWriter := tar.NewWriter(metaFile)
+		if err := metaWriter.WriteHeader(hdr); err != nil {
+			return "", err
+		}
+		metaWriter.Close()
+		// FIXME: git can carry symlinks as well
 		if hdr.Typeflag == tar.TypeReg {
-			if file, err := os.Open(path); err != nil {
-				return err
-			} else {
-				_, err := io.Copy(tw, file)
-				if err != nil {
-					return err
-				}
-				file.Close()
+			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
+			dataDst := path.Join(tmp, "_fs_data", hdr.Name)
+			if err := os.MkdirAll(path.Dir(dataDst), 0700); err != nil {
+				return "", err
+			}
+			dataFile, err := os.OpenFile(dataDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0700)
+			if err != nil {
+				return "", err
+			}
+			if _, err := io.Copy(dataFile, tr); err != nil {
+				return "", err
 			}
 		}
 	}
-
-	return nil
+	return
 }
-
-func major(device uint64) uint64 {
-	return (device >> 8) & 0xfff
-}
-
-func minor(device uint64) uint64 {
-	return (device & 0xff) | ((device >> 12) & 0xfff00)
-}
-
