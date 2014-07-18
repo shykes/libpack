@@ -12,7 +12,14 @@ import (
 	"path"
 	"strings"
 
+	git "github.com/libgit2/git2go"
+
 	"github.com/dotcloud/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
+)
+
+const (
+	MetaTree = "_fs_meta"
+	DataTree = "_fs_data"
 )
 
 func main() {
@@ -23,7 +30,7 @@ func main() {
 	fmt.Println(result)
 }
 
-func git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, error) {
+func Git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"--git-dir", repo}, args...)...)
 	if stdin != nil {
 		cmd.Stdin = stdin
@@ -41,7 +48,7 @@ func git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, e
 }
 
 func gitHashObject(repo string, src io.Reader) (string, error) {
-	out, err := git(repo, "", "", src, "hash-object", "-w", "--stdin")
+	out, err := Git(repo, "", "", src, "hash-object", "-w", "--stdin")
 	if err != nil {
 		return "", fmt.Errorf("git hash-object: %v", err)
 	}
@@ -49,7 +56,7 @@ func gitHashObject(repo string, src io.Reader) (string, error) {
 }
 
 func gitWriteTree(repo, idx string) (string, error) {
-	out, err := git(repo, idx, "", nil, "write-tree")
+	out, err := Git(repo, idx, "", nil, "write-tree")
 	if err != nil {
 		return "", fmt.Errorf("git write-tree: %v", err)
 	}
@@ -67,18 +74,134 @@ func gitReadTree(repo, idx, prefix, hash string) error {
 		return err
 	}
 	defer os.RemoveAll(worktree)
-	if _, err := git(repo, idx, worktree, nil, "read-tree", "--prefix", prefix, hash); err != nil {
+	if _, err := Git(repo, idx, worktree, nil, "read-tree", "--prefix", prefix, hash); err != nil {
 		return fmt.Errorf("git-read-tree: %v", err)
 	}
 	return nil
 }
 
+// gitInit intializes a bare git repository at the path repo
 func gitInit(repo string) error {
-	_, err := git(repo, "", "", nil, "init", "--bare", repo)
+	_, err := Git(repo, "", "", nil, "init", "--bare", repo)
 	if err != nil {
 		return fmt.Errorf("git init: %v", err)
 	}
 	return nil
+}
+
+func lookupTree(repo *git.Repository, id *git.Oid) (*git.Tree, error) {
+	obj, err := repo.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	if tree, ok := obj.(*git.Tree); ok {
+		return tree, nil
+	}
+	return nil, fmt.Errorf("hash %v exist but is not a tree", id)
+}
+
+func lookupBlob(repo *git.Repository, id *git.Oid) (*git.Blob, error) {
+	obj, err := repo.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	if blob, ok := obj.(*git.Blob); ok {
+		return blob, nil
+	}
+	return nil, fmt.Errorf("hash %v exist but is not a blob", id)
+}
+
+func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
+	entry, err := tree.EntryByPath(name)
+	if err != nil {
+		return nil, err
+	}
+	return lookupTree(repo, entry.Id)
+}
+
+func lookupMetadata(repo *git.Repository, tree *git.Tree, name string) (*tar.Header, error) {
+	entry, err := tree.EntryByPath(metaPath(name))
+	if err != nil {
+		return nil, err
+	}
+	blob, err := lookupBlob(repo, entry.Id)
+	if err != nil {
+		return nil, err
+	}
+	defer blob.Free()
+	tr := tar.NewReader(bytes.NewReader(blob.Contents()))
+	hdr, err := tr.Next()
+	if err != nil {
+		return nil, err
+	}
+	return hdr, nil
+}
+
+func git2tar(repo, hash string, dst io.Writer) error {
+	tw := tar.NewWriter(dst)
+	r, err := git.InitRepository(repo, true)
+	if err != nil {
+		return err
+	}
+	defer r.Free()
+	// Lookup the tree object at `hash` in `repo`
+	treeId, err := git.NewOid(hash)
+	if err != nil {
+		return err
+	}
+	tree, err := lookupTree(r, treeId)
+	if err != nil {
+		return err
+	}
+	defer tree.Free()
+	metaTree, err := lookupSubtree(r, tree, MetaTree)
+	if err != nil {
+		return err
+	}
+	defer metaTree.Free()
+	dataTree, err := lookupSubtree(r, tree, DataTree)
+	if err != nil {
+		return err
+	}
+	// Walk the data tree
+	var walkErr error
+	if err := dataTree.Walk(func(name string, entry *git.TreeEntry) int {
+		// For each element (blob or subtree) look up the corresponding tar header
+		// from the meta tree
+		hdr, err := lookupMetadata(r, tree, name)
+		if err != nil {
+			walkErr = err
+			return -1
+		}
+		// Write the reconstituted tar header+content
+		if err := tw.WriteHeader(hdr); err != nil {
+			walkErr = err
+			return -1
+		}
+		if entry.Type == git.ObjectBlob {
+			blob, err := lookupBlob(r, entry.Id)
+			if err != nil {
+				walkErr = err
+				return -1
+			}
+			if _, err := tw.Write(blob.Contents()); err != nil {
+				walkErr = err
+				return -1
+			}
+		}
+		return 0
+	}); err != nil {
+		if walkErr != nil {
+			return walkErr
+		}
+		return err
+	}
+	return nil
+}
+
+func metaPath(name string) string {
+	// FIXME: this doesn't seem to yield the expected result.
+	return path.Join("_fs_meta", fmt.Sprintf("%0x", sha1.Sum([]byte(name))))
 }
 
 // tar2git decodes a tar stream from src, then encodes it into a new git commit
@@ -108,7 +231,7 @@ func tar2git(src io.Reader, repo string) (hash string, err error) {
 		if err != nil {
 			return "", err
 		}
-		metaDst := path.Join("_fs_meta", fmt.Sprintf("%0x", sha1.Sum([]byte(hdr.Name))))
+		metaDst := metaPath(hdr.Name)
 		fmt.Printf("    ---> storing metadata in %s\n", metaDst)
 		if err := tree.Update(metaDst, metaHash); err != nil {
 			return "", err
@@ -171,7 +294,7 @@ func (tree Tree) Store(repo string) (hash string, err error) {
 	}
 	for key, hash := range blobs {
 		fmt.Printf("[%p] Storing blob %s at %s\n", tree, hash, key)
-		if _, err := git(repo, idx, "", nil, "update-index", "--add", "--cacheinfo", "100644", hash, key); err != nil {
+		if _, err := Git(repo, idx, "", nil, "update-index", "--add", "--cacheinfo", "100644", hash, key); err != nil {
 			return "", err
 		}
 	}
