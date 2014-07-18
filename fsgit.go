@@ -128,7 +128,10 @@ func lookupMetadata(repo *git.Repository, tree *git.Tree, name string) (*tar.Hea
 	return hdr, nil
 }
 
-func git2tar(repo, hash string, dst io.Writer) error {
+// Git2tar looks for a git tree object at `hash` in a git repository at the path
+// `repo`, then extracts it as a tar stream written to `dst`.
+// The tree is not buffered on disk or in memory before being streamed.
+func Git2tar(repo, hash string, dst io.Writer) error {
 	tw := tar.NewWriter(dst)
 	r, err := git.InitRepository(repo, true)
 	if err != nil {
@@ -157,11 +160,17 @@ func git2tar(repo, hash string, dst io.Writer) error {
 	// Walk the data tree
 	var walkErr error
 	if err := dataTree.Walk(func(name string, entry *git.TreeEntry) int {
+		// FIXME: is it normal that Walk() passes an empty name?
+		// If so, what's the correct way to handle it?
+		// For now we just skip it.
+		if name == "" {
+			return 0
+		}
 		// For each element (blob or subtree) look up the corresponding tar header
 		// from the meta tree
 		hdr, err := lookupMetadata(r, tree, name)
 		if err != nil {
-			walkErr = err
+			walkErr = fmt.Errorf("metadata lookup for '%s': %v", name, err)
 			return -1
 		}
 		// Write the reconstituted tar header+content
