@@ -1,4 +1,4 @@
-package main
+package libpack
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -21,14 +20,6 @@ const (
 	MetaTree = "_fs_meta"
 	DataTree = "_fs_data"
 )
-
-func main() {
-	result, err := tar2git(os.Stdin, os.Args[1])
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(result)
-}
 
 func Git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"--git-dir", repo}, args...)...)
@@ -204,10 +195,10 @@ func metaPath(name string) string {
 	return path.Join("_fs_meta", fmt.Sprintf("%0x", sha1.Sum([]byte(name))))
 }
 
-// tar2git decodes a tar stream from src, then encodes it into a new git commit
+// Tar2git decodes a tar stream from src, then encodes it into a new git commit
 // such that the full tar stream can be reconsistuted from the git data alone.
 // It retusn hash of the git commit, or an error if any.
-func tar2git(src io.Reader, repo string) (hash string, err error) {
+func Tar2git(src io.Reader, repo string) (hash string, err error) {
 	if err := gitInit(repo); err != nil {
 		return "", err
 	}
