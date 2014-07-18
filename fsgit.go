@@ -210,6 +210,11 @@ func Git2tar(repo, hash string, dst io.Writer) error {
 	return nil
 }
 
+// metaPath computes a path at which the metadata can be stored for a given path.
+// For example if `name` is "/etc/resolv.conf", the corresponding metapath is 
+// "_fs_meta/194c1cbe5a8cfcb85c6a46b936da12ffdc32f90f"
+// This path will be used to store and retrieve the tar header encoding the metadata
+// for the corresponding file.
 func metaPath(name string) string {
 	// FIXME: this doesn't seem to yield the expected result.
 	return path.Join("_fs_meta", fmt.Sprintf("%0x", sha1.Sum([]byte(name))))
