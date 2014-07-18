@@ -80,6 +80,8 @@ func gitInit(repo string) error {
 	return nil
 }
 
+// lookupTree looks up an object at hash `id` in `repo`, and returns
+// it as a git tree. If the object is not a tree, an error is returned.
 func lookupTree(repo *git.Repository, id *git.Oid) (*git.Tree, error) {
 	obj, err := repo.Lookup(id)
 	if err != nil {
@@ -91,6 +93,8 @@ func lookupTree(repo *git.Repository, id *git.Oid) (*git.Tree, error) {
 	return nil, fmt.Errorf("hash %v exist but is not a tree", id)
 }
 
+// lookupBlob looks up an object at hash `id` in `repo`, and returns
+// it as a git blob. If the object is not a blob, an error is returned.
 func lookupBlob(repo *git.Repository, id *git.Oid) (*git.Blob, error) {
 	obj, err := repo.Lookup(id)
 	if err != nil {
@@ -102,6 +106,13 @@ func lookupBlob(repo *git.Repository, id *git.Oid) (*git.Blob, error) {
 	return nil, fmt.Errorf("hash %v exist but is not a blob", id)
 }
 
+// lookupTree looks up the entry `name` under the git tree `Tree` in
+// repository `repo`. If `name` includes slashes, it is interpreted as
+// a path in the tree.
+// If the entry exists, the object it points to is is returned, converted
+// to a git tree (ie a sub-tree).
+// If the entry does not point to a tree (the other option being a blob),
+// an error is returned.
 func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
 	entry, err := tree.EntryByPath(name)
 	if err != nil {
