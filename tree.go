@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"path"
 	"strings"
 )
@@ -110,7 +111,76 @@ func (tree Tree) Walk(depth int, onTree func(string, Tree), onString func(string
 	}
 }
 
-func (tree Tree) Update(key string, val interface{}) error {
+func (tree Tree) GetBlob(key string) (string, error) {
+	base, leaf := path.Split(path.Clean(key))
+	if leaf == "" {
+		return "", fmt.Errorf("invalid path")
+	}
+	subtree, err := tree.SubTree(base, false)
+	if err != nil {
+		return "", err
+	}
+	val, exists := subtree[leaf]
+	if !exists {
+		return "", os.ErrNotExist
+	}
+	valString, isString := val.(string)
+	if !isString {
+		return "", fmt.Errorf("not a blob: %s", key)
+	}
+	return valString, nil
+}
+
+func (tree Tree) SubTree(key string, create bool) (t Tree, err error) {
+	fmt.Printf("SubTree(%s)\n", key)
+	defer fmt.Printf("SubTree(%s) = %#v\n", key, t)
+	parts := pathParts(key)
+	if len(parts) == 0 {
+		return tree, nil
+	}
+	fmt.Printf("--> %d parts %s\n", len(parts), parts)
+	cursor := tree
+	for n, part := range parts {
+		val, exists := cursor[part]
+		if !exists {
+			if !create {
+				return nil, os.ErrNotExist
+			}
+			// If this path component doesn't exist, create a new subtree and keep going
+			subtree := make(Tree)
+			cursor[part] = subtree
+			cursor = subtree
+		} else if valTree, isTree := val.(Tree); isTree {
+			// If this path component is a tree, keep going
+			cursor = valTree
+		} else {
+			// If this path component exists but is not a tree, return an error
+			return nil, fmt.Errorf("%s: not a tree", path.Join(parts[:n+1]...))
+		}
+	}
+	return cursor, nil
+}
+
+func (tree Tree) SetBlob(key, val string) error {
+	return tree.Update(key, val)
+}
+
+func pathParts(p string) (parts []string) {
+	return strings.Split(path.Clean(p), "/")
+	p = strings.TrimLeft(p, "/")
+	for {
+		p = path.Clean(p)
+		base, leaf := path.Split(p)
+		parts = append(parts, leaf)
+		if base == "" {
+			break
+		}
+		p = base
+	}
+	return
+}
+
+func (tree Tree) Update(key string, val interface{}, create bool) error {
 	key = path.Clean(key)
 	key = strings.TrimLeft(key, "/") // Remove trailing slashes
 	base, leaf := path.Split(key)
