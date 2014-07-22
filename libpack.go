@@ -10,8 +10,10 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"sync"
 
 	git "github.com/libgit2/git2go"
+	"github.com/dotcloud/docker/archive"
 
 	"github.com/dotcloud/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
@@ -20,6 +22,41 @@ const (
 	MetaTree = "_fs_meta"
 	DataTree = "_fs_data"
 )
+
+func Pack(repo, dir string) (hash string, err error) {
+	a, err := archive.TarWithOptions(dir, &archive.TarOptions{Excludes: []string{".git"}})
+	if err != nil {
+		return "", err
+	}
+	return Tar2git(a, repo)
+}
+
+func Unpack(repo, dir, hash string) error {
+	r, w := io.Pipe()
+	var (
+		inErr error
+		outErr error
+	)
+	var tasks sync.WaitGroup
+	tasks.Add(2)
+	go func() {
+		defer tasks.Done()
+		inErr = Git2tar(repo, hash, os.Stdout)
+		w.Close()
+	}()
+	go func() {
+		defer tasks.Done()
+		outErr = archive.Untar(r, dir, &archive.TarOptions{})
+	}()
+	tasks.Wait()
+	if inErr != nil {
+		return fmt.Errorf("git2tar: %v", inErr)
+	}
+	if outErr != nil {
+		return fmt.Errorf("untar: %v", outErr)
+	}
+	return nil
+}
 
 func Git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"--git-dir", repo}, args...)...)
