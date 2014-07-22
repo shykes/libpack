@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"path"
 	"strings"
 )
@@ -108,6 +109,85 @@ func (tree Tree) Walk(depth int, onTree func(string, Tree), onString func(string
 			continue
 		}
 	}
+}
+
+func (tree Tree) GetBlob(key string) (string, error) {
+	base, leaf := path.Split(path.Clean(key))
+	if leaf == "" {
+		return "", fmt.Errorf("invalid path")
+	}
+	subtree, err := tree.SubTree(base, false)
+	if err != nil {
+		return "", err
+	}
+	val, exists := subtree[leaf]
+	if !exists {
+		return "", os.ErrNotExist
+	}
+	valString, isString := val.(string)
+	if !isString {
+		return "", fmt.Errorf("not a blob: %s", key)
+	}
+	return valString, nil
+}
+
+func (tree Tree) SubTree(key string, create bool) (t Tree, err error) {
+	parts := pathParts(key)
+	if len(parts) == 0 {
+		return tree, nil
+	}
+	cursor := tree
+	for n, part := range parts {
+		val, exists := cursor[part]
+		if !exists {
+			if !create {
+				return nil, os.ErrNotExist
+			}
+			// If this path component doesn't exist, create a new subtree and keep going
+			subtree := make(Tree)
+			cursor[part] = subtree
+			cursor = subtree
+		} else if valTree, isTree := val.(Tree); isTree {
+			// If this path component is a tree, keep going
+			cursor = valTree
+		} else {
+			// If this path component exists but is not a tree, return an error
+			return nil, fmt.Errorf("%s: not a tree", path.Join(parts[:n+1]...))
+		}
+	}
+	return cursor, nil
+}
+
+func (tree Tree) SetBlob(key, val string) error {
+	var dir Tree
+	base, leaf := path.Split(key)
+	if base == "" {
+		dir = tree
+	} else {
+		var err error
+		dir, err = tree.SubTree(base, true)
+		if err != nil {
+			return err
+		}
+	}
+	// If the key exists and is a subtree, return an error
+	if oldVal, exists := dir[leaf]; exists {
+		if _, isTree := oldVal.(Tree); isTree {
+			return fmt.Errorf("%s: is a tree", key)
+		}
+	}
+	dir[leaf] = val
+	return nil
+}
+
+func pathParts(p string) (parts []string) {
+	p = path.Clean(p)
+	// path.Clean("") returns "."
+	if p == "." || p == "/" {
+		return []string{}
+	}
+	p = strings.TrimLeft(p, "/")
+	return strings.Split(p, "/")
 }
 
 func (tree Tree) Update(key string, val interface{}) error {
