@@ -195,14 +195,19 @@ func (tree Tree) Update(key string, val interface{}) error {
 	key = strings.TrimLeft(key, "/") // Remove trailing slashes
 	base, leaf := path.Split(key)
 	if base == "" {
+		// If val is a string, set it and we're done.
+		// Any old value is overwritten.
 		if valString, ok := val.(string); ok {
 			tree[leaf] = valString
 			return nil
 		}
+		// If val is not a string, it must be a subtree.
+		// Return an error if it's any other type than Tree.
 		valTree, ok := val.(Tree)
 		if !ok {
 			return fmt.Errorf("value must be a string or subtree")
 		}
+		// If that subtree already exists, merge the new one in.
 		if old, exists := tree[leaf]; exists {
 			oldTree, isTree := old.(Tree)
 			if !isTree {
