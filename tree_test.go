@@ -129,7 +129,8 @@ func TestSetBlob(t *testing.T) {
 	if hello, err := tree.GetBlob("in/a/subtree/hello"); hello != "world" {
 		t.Fatal(err)
 	}
-	if err := tree.SetBlob("/in/a/subtree", "this should not work..."); err == nil {
-		t.Fatalf("%#v", tree)
+	// Overwriting existing values should succeed
+	if err := tree.SetBlob("/in/a/subtree", "this *must* work"); err != nil {
+		t.Fatal(err)
 	}
 }

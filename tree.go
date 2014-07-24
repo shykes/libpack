@@ -137,22 +137,26 @@ func (tree Tree) SubTree(key string, create bool) (t Tree, err error) {
 		return tree, nil
 	}
 	cursor := tree
-	for n, part := range parts {
+	for _, part := range parts {
 		val, exists := cursor[part]
-		if !exists {
+		valTree, isTree := val.(Tree)
+		// For each path component, 1 of the following is true:
+		// 1. it doesn't exist
+		// 2. it's a blob
+		// 3. it's a subtree
+		if !exists || !isTree {
+			// If this component (1) doesn't exist or (2) it's a blob,
+			// we must create a new subtree. This will overwrite the blob
+			// if it exists.
 			if !create {
 				return nil, os.ErrNotExist
 			}
-			// If this path component doesn't exist, create a new subtree and keep going
 			subtree := make(Tree)
 			cursor[part] = subtree
 			cursor = subtree
-		} else if valTree, isTree := val.(Tree); isTree {
+		} else {
 			// If this path component is a tree, keep going
 			cursor = valTree
-		} else {
-			// If this path component exists but is not a tree, return an error
-			return nil, fmt.Errorf("%s: not a tree", path.Join(parts[:n+1]...))
 		}
 	}
 	return cursor, nil
@@ -168,12 +172,6 @@ func (tree Tree) SetBlob(key, val string) error {
 		dir, err = tree.SubTree(base, true)
 		if err != nil {
 			return err
-		}
-	}
-	// If the key exists and is a subtree, return an error
-	if oldVal, exists := dir[leaf]; exists {
-		if _, isTree := oldVal.(Tree); isTree {
-			return fmt.Errorf("%s: is a tree", key)
 		}
 	}
 	dir[leaf] = val
