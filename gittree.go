@@ -5,12 +5,11 @@ import (
 )
 
 type GitTree struct {
-	repo *git.Repository
 	*git.Tree
 }
 
-func NewGitTree(repo *git.Repository, tree *git.Tree) *GitTree {
-	return &GitTree{Tree: tree, repo: repo}
+func NewGitTree(tree *git.Tree) *GitTree {
+	return &GitTree{Tree: tree}
 }
 
 func (tree *GitTree) GetBlob(key string) (string, error) {
@@ -18,7 +17,7 @@ func (tree *GitTree) GetBlob(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	blob, err := lookupBlob(tree.repo, entry.Id)
+	blob, err := lookupBlob(tree.Owner(), entry.Id)
 	if err != nil {
 		return "", err
 	}
@@ -32,11 +31,11 @@ func (tree *GitTree) SubTree(key string, create bool) (*GitTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, err := lookupTree(tree.repo, entry.Id)
+	t, err := lookupTree(tree.Owner(), entry.Id)
 	if err != nil {
 		return nil, err
 	}
-	return NewGitTree(tree.repo, t), nil
+	return NewGitTree(t), nil
 }
 
 func (tree *GitTree) List(key string) ([]string, error) {
