@@ -12,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	git "github.com/libgit2/git2go"
 	"github.com/dotcloud/docker/archive"
+	git "github.com/libgit2/git2go"
 
 	"github.com/dotcloud/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
@@ -34,7 +34,7 @@ func Pack(repo, dir string) (hash string, err error) {
 func Unpack(repo, dir, hash string) error {
 	r, w := io.Pipe()
 	var (
-		inErr error
+		inErr  error
 		outErr error
 	)
 	var tasks sync.WaitGroup
@@ -248,7 +248,7 @@ func Git2tar(repo, hash string, dst io.Writer) error {
 }
 
 // metaPath computes a path at which the metadata can be stored for a given path.
-// For example if `name` is "/etc/resolv.conf", the corresponding metapath is 
+// For example if `name` is "/etc/resolv.conf", the corresponding metapath is
 // "_fs_meta/194c1cbe5a8cfcb85c6a46b936da12ffdc32f90f"
 // This path will be used to store and retrieve the tar header encoding the metadata
 // for the corresponding file.
