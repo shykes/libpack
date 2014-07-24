@@ -40,7 +40,10 @@ func cmdUnpack(c *cli.Context) {
 }
 
 func cmdPack(c *cli.Context) {
-	hash, err := libpack.Pack(".git", ".")
+	if len(c.Args()) != 1 {
+		Fatalf("usage: pack BRANCH")
+	}
+	hash, err := libpack.Pack(".git", ".", c.Args()[0])
 	if err != nil {
 		Fatalf("unpack: %v", err)
 	}

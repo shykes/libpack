@@ -23,12 +23,12 @@ const (
 	DataTree = "_fs_data"
 )
 
-func Pack(repo, dir string) (hash string, err error) {
+func Pack(repo, dir, branch string) (hash string, err error) {
 	a, err := archive.TarWithOptions(dir, &archive.TarOptions{Excludes: []string{".git"}})
 	if err != nil {
 		return "", err
 	}
-	return Tar2git(a, repo)
+	return Tar2git(a, repo, branch)
 }
 
 func Unpack(repo, dir, hash string) error {
@@ -128,6 +128,19 @@ func lookupTree(repo *git.Repository, id *git.Oid) (*git.Tree, error) {
 		return tree, nil
 	}
 	return nil, fmt.Errorf("hash %v exist but is not a tree", id)
+}
+
+// lookupTree looks up an object at hash `id` in `repo`, and returns
+// it as a git commit. If the object is not a commit, an error is returned.
+func lookupCommit(repo *git.Repository, id *git.Oid) (*git.Commit, error) {
+	obj, err := repo.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	if commit, ok := obj.(*git.Commit); ok {
+		return commit, nil
+	}
+	return nil, fmt.Errorf("hash %v exist but is not a commit", id)
 }
 
 // lookupBlob looks up an object at hash `id` in `repo`, and returns
@@ -260,7 +273,7 @@ func metaPath(name string) string {
 // Tar2git decodes a tar stream from src, then encodes it into a new git commit
 // such that the full tar stream can be reconsistuted from the git data alone.
 // It retusn hash of the git commit, or an error if any.
-func Tar2git(src io.Reader, repo string) (hash string, err error) {
+func Tar2git(src io.Reader, repo, branch string) (hash string, err error) {
 	if err := gitInit(repo); err != nil {
 		return "", err
 	}
@@ -303,7 +316,7 @@ func Tar2git(src io.Reader, repo string) (hash string, err error) {
 		}
 	}
 	tree.Pretty(os.Stdout)
-	return tree.Store(repo)
+	return tree.Commit(repo, branch)
 }
 
 func headerReader(hdr *tar.Header) (io.Reader, error) {
