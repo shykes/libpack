@@ -162,6 +162,18 @@ func (tree Tree) SubTree(key string, create bool) (t Tree, err error) {
 	return cursor, nil
 }
 
+func (tree Tree) List(key string) ([]string, error) {
+	dir, err := tree.SubTree(key, false)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(dir))
+	for _, k := range keys {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
 func (tree Tree) SetBlob(key, val string) error {
 	var dir Tree
 	base, leaf := path.Split(key)
