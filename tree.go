@@ -3,7 +3,6 @@ package libpack
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -19,6 +18,8 @@ import (
 //
 // [1] http://git-scm.com/book/en/Git-Internals-Git-Objects#Tree-Objects
 type Tree map[string]interface{}
+
+// FIXME: suport for whiteouts
 
 func (tree Tree) Commit(repo, branch string) (string, error) {
 	r, err := git.InitRepository(repo, true)
@@ -67,22 +68,24 @@ func (tree Tree) Store(repo string) (hash string, err error) {
 	if err != nil {
 		return "", err
 	}
-	gt, err := tree.store(r)
+	gt, err := tree.store(r, nil)
 	if err != nil {
 		return "", err
 	}
 	return gt.Id().String(), nil
 }
 
-func (tree Tree) store(r *git.Repository) (*git.Tree, error) {
-	// Initialize new index file
-	tmp, err := ioutil.TempDir("", "tmpidx")
-	if err != nil {
-		return nil, err
+func (tree Tree) store(r *git.Repository, base *git.Tree) (*git.Tree, error) {
+	var tb *git.TreeBuilder
+	if base == nil {
+		tb := r.TreeBuilder()
+	} else {
+		tb, err := r.TreeBuilderFromTree(base)
+		if err != nil {
+			return nil, err
+		}
 	}
-	idx := path.Join(tmp, "idx")
-	fmt.Printf("[%p] index file is at %s\n", tree, idx)
-	// defer os.RemoveAll(idx)
+	defer tb.Free()
 	blobs := make(map[string]string)
 	subtrees := make(map[string]Tree)
 	tree.Walk(1,
@@ -96,31 +99,31 @@ func (tree Tree) store(r *git.Repository) (*git.Tree, error) {
 	for prefix, subtree := range subtrees {
 		fmt.Printf("[%p] Recursively storing sub-tree %s (%p)\n", tree, prefix, subtree)
 		// Store the subtree
-		gsubtree, err := subtree.store(r)
+		gsubtree, err := subtree.store(r, nil)
 		if err != nil {
 			return nil, err
 		}
 		fmt.Printf("[%p]    -> %s tree stored at %s\n", tree, prefix, gsubtree.Id().String())
 		// Add the subtree at `prefix/` in the current tree
-		if err := gitReadTree(r.Path(), idx, prefix, gsubtree.Id().String()); err != nil {
+		if err := tb.Insert(prefix, gsubtree.Id(), 040000); err != nil {
 			return nil, err
 		}
 	}
 	for key, hash := range blobs {
 		fmt.Printf("[%p] Storing blob %s at %s\n", tree, hash, key)
-		if _, err := Git(r.Path(), idx, "", nil, "update-index", "--add", "--cacheinfo", "100644", hash, key); err != nil {
+		id, err := git.NewOid(hash)
+		if err != nil {
+			return nil, err
+		}
+		if err := tb.Insert(key, id, 0100644); err != nil {
 			return nil, err
 		}
 	}
-	treeHash, err := gitWriteTree(r.Path(), idx)
+	treeId, err := tb.Write()
 	if err != nil {
 		return nil, err
 	}
-	id, err := git.NewOid(treeHash)
-	if err != nil {
-		return nil, err
-	}
-	return lookupTree(r, id)
+	return lookupTree(r, treeId)
 }
 
 // Pretty writes a human-readable description of the tree's contents

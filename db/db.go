@@ -14,7 +14,7 @@ type DB struct {
 	commit  *git.Commit
 	ref     string
 	scope   string
-	changes []*change
+	changes Tree
 }
 
 type change struct {
@@ -91,8 +91,27 @@ func (db *DB) Get(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer blob.Free()
 	return string(blob.Contents()), nil
+}
+
+func (db *DB) IsDir(key string) (bool, error) {
+	if db.commit == nil {
+		return false, nil
+	}
+	tree, err := db.commit.Tree()
+	if err != nil {
+		return false, err
+	}
+	e, err := tree.EntryByPath(path.Join(db.scope, key))
+	if err != nil {
+		return "", err
+	}
+	tree, err := db.lookupTree(e.Id)
+	if err != nil {
+		return false, nil
+	}
+	defer tree.Free()
+	return true, nil
 }
 
 func (db *DB) Set(key, value string) error {
@@ -100,6 +119,7 @@ func (db *DB) Set(key, value string) error {
 	if err != nil {
 		return err
 	}
+	if err := db.changes.Update(key,
 	db.changes = append(db.changes, &change{Op: opAdd, Name: key, Id: id})
 	return nil
 }
@@ -157,6 +177,19 @@ func (db *DB) Commit(msg string) error {
 	defer tb.Free()
 	for _, ch := range db.changes {
 		if ch.Op == opAdd {
+			parts := pathParts(ch.Name)
+			for i, dir := range parts[:len(parts - 1)] {
+				// insert the intermediary directories if they don't exist
+				if isDir, err := db.IsDir(path.Join(parts[:i+1]...)); err != nil {
+					return err
+				} else if !isDir {
+					if err := tb.Insert(, ch.Id, 040000); err != nil {
+						return err
+			}
+					
+				}
+				if err 
+			}
 			if err := tb.Insert(ch.Name, ch.Id, 0100644); err != nil {
 				return err
 			}
@@ -240,3 +273,14 @@ func (db *DB) lookupCommit(id *git.Oid) (*git.Commit, error) {
 	}
 	return nil, fmt.Errorf("hash %v exist but is not a commit", id)
 }
+
+func pathParts(p string) (parts []string) {
+	p = path.Clean(p)
+	// path.Clean("") returns "."
+	if p == "." || p == "/" {
+		return []string{}
+	}
+	p = strings.TrimLeft(p, "/")
+	return strings.Split(p, "/")
+}
+
