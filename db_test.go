@@ -1,4 +1,4 @@
-package db
+package libpack
 
 import (
 	"io/ioutil"
