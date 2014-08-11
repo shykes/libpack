@@ -81,6 +81,13 @@ func (db *DB) Update() error {
 		db.commit.Free()
 	}
 	db.commit = commit
+	if db.tree == nil {
+		tree, err := db.commit.Tree()
+		if err != nil {
+			return err
+		}
+		db.tree = tree
+	}
 	return nil
 }
 
