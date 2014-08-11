@@ -47,6 +47,18 @@ func TestInit(t *testing.T) {
 	}
 }
 
+func TestSetEmpty(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("foo", ""); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSetGetSimple(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
