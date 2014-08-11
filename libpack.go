@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	gitdb "github.com/docker/libpack/db"
 	"github.com/dotcloud/docker/archive"
 	git "github.com/libgit2/git2go"
 
@@ -75,14 +76,6 @@ func Git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, e
 	return string(out), err
 }
 
-func gitHashObject(repo string, src io.Reader) (string, error) {
-	out, err := Git(repo, "", "", src, "hash-object", "-w", "--stdin")
-	if err != nil {
-		return "", fmt.Errorf("git hash-object: %v", err)
-	}
-	return strings.Trim(string(out), " \t\r\n"), nil
-}
-
 func gitWriteTree(repo, idx string) (string, error) {
 	out, err := Git(repo, idx, "", nil, "write-tree")
 	if err != nil {
@@ -92,10 +85,10 @@ func gitWriteTree(repo, idx string) (string, error) {
 }
 
 // gitReadTree calls 'git read-tree' with the following settings:
-//	repo is the path to a git repo (bare)
-//	idx is the path to the git index file to update
-//	hash is the hash of the tree object to add
-//	prefix is the prefix at which the tree should be added to the index file
+//     repo is the path to a git repo (bare)
+//     idx is the path to the git index file to update
+//     hash is the hash of the tree object to add
+//     prefix is the prefix at which the tree should be added to the index file
 func gitReadTree(repo, idx, prefix, hash string) error {
 	worktree, err := ioutil.TempDir("", "tmpwd")
 	if err != nil {
@@ -104,15 +97,6 @@ func gitReadTree(repo, idx, prefix, hash string) error {
 	defer os.RemoveAll(worktree)
 	if _, err := Git(repo, idx, worktree, nil, "read-tree", "--prefix", prefix, hash); err != nil {
 		return fmt.Errorf("git-read-tree: %v", err)
-	}
-	return nil
-}
-
-// gitInit intializes a bare git repository at the path repo
-func gitInit(repo string) error {
-	_, err := Git(repo, "", "", nil, "init", "--bare", repo)
-	if err != nil {
-		return fmt.Errorf("git init: %v", err)
 	}
 	return nil
 }
@@ -274,11 +258,10 @@ func metaPath(name string) string {
 // such that the full tar stream can be reconsistuted from the git data alone.
 // It retusn hash of the git commit, or an error if any.
 func Tar2git(src io.Reader, repo, branch string) (hash string, err error) {
-	if err := gitInit(repo); err != nil {
+	db, err := gitdb.Init(repo, branch, "")
+	if err != nil {
 		return "", err
 	}
-
-	tree := make(Tree)
 	tr := tar.NewReader(src)
 	for {
 		hdr, err := tr.Next()
@@ -293,30 +276,25 @@ func Tar2git(src io.Reader, repo, branch string) (hash string, err error) {
 		if err != nil {
 			return "", err
 		}
-		metaHash, err := gitHashObject(repo, metaBlob)
-		if err != nil {
-			return "", err
-		}
-		metaDst := metaPath(hdr.Name)
-		fmt.Printf("    ---> storing metadata in %s\n", metaDst)
-		if err := tree.Update(metaDst, metaHash); err != nil {
+		fmt.Printf("    ---> storing metadata in %s\n", metaPath(hdr.Name))
+		if err := db.SetStream(metaPath(hdr.Name), metaBlob); err != nil {
 			return "", err
 		}
 		// FIXME: git can carry symlinks as well
 		if hdr.Typeflag == tar.TypeReg {
 			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
-			dataHash, err := gitHashObject(repo, tr)
-			if err != nil {
-				return "", err
-			}
-			dataDst := path.Join("_fs_data", hdr.Name)
-			if err := tree.Update(dataDst, dataHash); err != nil {
+			if err := db.SetStream(path.Join("_fs_data", hdr.Name), tr); err != nil {
 				return "", err
 			}
 		}
 	}
-	tree.Pretty(os.Stdout)
-	return tree.Commit(repo, branch)
+	if err := db.Commit("imported tar filesystem tree"); err != nil {
+		return "", err
+	}
+	if head := db.Head(); head != nil {
+		return head.String(), nil
+	}
+	return "", nil
 }
 
 func headerReader(hdr *tar.Header) (io.Reader, error) {

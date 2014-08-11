@@ -1,7 +1,9 @@
 package db
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -128,10 +130,24 @@ func (db *DB) Set(key, value string) error {
 	// note: db.tree might be nil if this is the first entry
 	newTree, err := treeUpdate(db.repo, db.tree, key, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("treeupdate: %v", err)
 	}
 	db.tree = newTree
 	return nil
+}
+
+// SetStream writes the data from `src` to a new Git blob,
+// and updates the uncommitted tree to point to that blob as `key`.
+func (db *DB) SetStream(key string, src io.Reader) error {
+	// FIXME: instead of buffering the entire value, use
+	// libgit2 CreateBlobFromChunks to stream the data straight
+	// into git.
+	buf := new(bytes.Buffer)
+	_, err := io.Copy(buf, src)
+	if err != nil {
+		return err
+	}
+	return db.Set(key, buf.String())
 }
 
 // List returns a list of object names at the subtree `key`.
