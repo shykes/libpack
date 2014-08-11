@@ -46,3 +46,37 @@ func TestInit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSetGetSimple(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("foo", "bar"); err != nil {
+		t.Fatal(err)
+	}
+	if key, err := db.Get("foo"); err != nil {
+		t.Fatal(err)
+	} else if key != "bar" {
+		t.Fatalf("%#v", key)
+	}
+}
+
+func TestSetGetNested(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("a/b/c/d/hello", "world"); err != nil {
+		t.Fatal(err)
+	}
+	if key, err := db.Get("a/b/c/d/hello"); err != nil {
+		t.Fatal(err)
+	} else if key != "world" {
+		t.Fatalf("%#v", key)
+	}
+}

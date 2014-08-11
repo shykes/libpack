@@ -4,32 +4,26 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	git "github.com/libgit2/git2go"
 )
 
+// DB is a simple git-backed database.
 type DB struct {
-	repo    *git.Repository
-	commit  *git.Commit
-	ref     string
-	scope   string
-	changes []*change
+	repo   *git.Repository
+	commit *git.Commit
+	ref    string
+	scope  string
+	tree   *git.Tree
 }
 
-type change struct {
-	Op   changeOp
-	Name string
-	Id   *git.Oid
-}
-
-type changeOp int
-
-const (
-	opAdd changeOp = iota
-	opDel
-)
-
+// Init initializes a new git-backed database from the following
+// elements:
+// * A bare git repository at `repo`
+// * A git reference name `ref` (for example "refs/heads/foo")
+// * An optional scope to expose only a subset of the git tree (for example "/myapp/v1")
 func Init(repo, ref, scope string) (*DB, error) {
 	r, err := git.InitRepository(repo, true)
 	if err != nil {
@@ -47,6 +41,10 @@ func Init(repo, ref, scope string) (*DB, error) {
 	return db, nil
 }
 
+// Free must be called to release resources when a database is no longer
+// in use.
+// This is required in addition to Golang garbage collection, because
+// of the libgit2 C bindings.
 func (db *DB) Free() {
 	db.repo.Free()
 	if db.commit != nil {
@@ -54,6 +52,10 @@ func (db *DB) Free() {
 	}
 }
 
+// Update looks up the value of the database's reference, and changes
+// the memory representation accordingly.
+// Uncommitted changes are left untouched (ie they are not merged
+// or rebased).
 func (db *DB) Update() error {
 	tip, err := db.repo.LookupReference(db.ref)
 	if err != nil {
@@ -71,19 +73,14 @@ func (db *DB) Update() error {
 	return nil
 }
 
-// High-level interface: Get, Set, Cd, Mkdir
-// Accepts paths.
-
+// Get returns the value of the Git blob at path `key`.
+// If there is no blob at the specified key, an error
+// is returned.
 func (db *DB) Get(key string) (string, error) {
-	if db.commit == nil {
+	if db.tree == nil {
 		return "", os.ErrNotExist
 	}
-	tree, err := db.commit.Tree()
-	if err != nil {
-		return "", err
-	}
-	defer tree.Free()
-	e, err := tree.EntryByPath(path.Join(db.scope, key))
+	e, err := db.tree.EntryByPath(path.Join(db.scope, key))
 	if err != nil {
 		return "", err
 	}
@@ -95,25 +92,29 @@ func (db *DB) Get(key string) (string, error) {
 	return string(blob.Contents()), nil
 }
 
+// Set writes the specified value in a Git blob, and updates the
+// uncommitted tree to point to that blob as `key`.
 func (db *DB) Set(key, value string) error {
 	id, err := db.repo.CreateBlobFromBuffer([]byte(value))
 	if err != nil {
 		return err
 	}
-	db.changes = append(db.changes, &change{Op: opAdd, Name: key, Id: id})
+	// note: db.tree might be nil if this is the first entry
+	newTree, err := treeUpdate(db.repo, db.tree, key, id)
+	if err != nil {
+		return err
+	}
+	db.tree = newTree
 	return nil
 }
 
+// List returns a list of object names at the subtree `key`.
+// If there is no subtree at `key`, an error is returned.
 func (db *DB) List(key string) ([]string, error) {
-	if db.commit == nil {
+	if db.tree == nil {
 		return []string{}, nil
 	}
-	tree, err := db.commit.Tree()
-	if err != nil {
-		return nil, err
-	}
-	defer tree.Free()
-	e, err := tree.EntryByPath(path.Join(db.scope, key))
+	e, err := db.tree.EntryByPath(path.Join(db.scope, key))
 	if err != nil {
 		return nil, err
 	}
@@ -133,49 +134,14 @@ func (db *DB) List(key string) ([]string, error) {
 	return entries, nil
 }
 
+// Commit atomically stores all database changes since the last commit
+// into a new Git commit object, and updates the database's reference
+// to point to that commit.
 func (db *DB) Commit(msg string) error {
-	var (
-		tb  *git.TreeBuilder
-		err error
-	)
-	if db.commit != nil {
-		tree, err := db.commit.Tree()
-		if err != nil {
-			return err
-		}
-		defer tree.Free()
-		tb, err = db.repo.TreeBuilderFromTree(tree)
-		if err != nil {
-			return err
-		}
-	} else {
-		tb, err = db.repo.TreeBuilder()
-		if err != nil {
-			return err
-		}
-	}
-	defer tb.Free()
-	for _, ch := range db.changes {
-		if ch.Op == opAdd {
-			if err := tb.Insert(ch.Name, ch.Id, 0100644); err != nil {
-				return err
-			}
-		} else if ch.Op == opDel {
-			if err := tb.Remove(ch.Name); err != nil {
-				return err
-			}
-		} else {
-			return fmt.Errorf("invalid op: %s", ch.Op)
-		}
-	}
-	newTreeId, err := tb.Write()
-	if err != nil {
-		return err
-	}
-	newTree, err := db.lookupTree(newTreeId)
-	if err != nil {
-		return err
-	}
+	// FIXME: the ref might have been changed by another
+	// process. We must implement either 1) reliable locking
+	// or 2) a solid merge resolution strategy.
+	// For now we simply assume the ref has not changed.
 	var parents []*git.Commit
 	if db.commit != nil {
 		parents = append(parents, db.commit)
@@ -185,7 +151,7 @@ func (db *DB) Commit(msg string) error {
 		&git.Signature{"libpack", "libpack", time.Now()}, // author
 		&git.Signature{"libpack", "libpack", time.Now()}, // committer
 		msg,
-		newTree,    // git tree to commit
+		db.tree,    // git tree to commit
 		parents..., // parent commit (0 or 1)
 	)
 	if err != nil {
@@ -200,6 +166,110 @@ func (db *DB) Commit(msg string) error {
 	}
 	db.commit = commit
 	return nil
+}
+
+// treeUpdate creates a new Git tree by adding a new object
+// to it at the specified path.
+// Intermediary subtrees are created as needed.
+// If an object already exists at key or any intermediary path,
+// it is overwritten.
+//
+// Since git trees are immutable, base is not modified. The new
+// tree is returned.
+// If an error is encountered, intermediary objects may be left
+// behind in the git repository. It is the caller's responsibility
+// to perform garbage collection, if any.
+// FIXME: manage garbage collection, or provide a list of created
+// objects.
+func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid) (*git.Tree, error) {
+	key = path.Clean(key)
+	key = strings.TrimLeft(key, "/") // Remove trailing slashes
+	base, leaf := path.Split(key)
+	o, err := repo.Lookup(valueId)
+	if err != nil {
+		return nil, err
+	}
+	var builder *git.TreeBuilder
+	if tree == nil {
+		builder, err = repo.TreeBuilder()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		builder, err = repo.TreeBuilderFromTree(tree)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer builder.Free()
+	if base == "" {
+		// If val is a string, set it and we're done.
+		// Any old value is overwritten.
+		if _, isBlob := o.(*git.Blob); isBlob {
+			if err := builder.Insert(leaf, valueId, 0100644); err != nil {
+				return nil, err
+			}
+			newTreeId, err := builder.Write()
+			if err != nil {
+				return nil, err
+			}
+			newTree, err := lookupTree(repo, newTreeId)
+			if err != nil {
+				return nil, err
+			}
+			return newTree, nil
+		}
+		// If val is not a string, it must be a subtree.
+		// Return an error if it's any other type than Tree.
+		oTree, ok := o.(*git.Tree)
+		if !ok {
+			return nil, fmt.Errorf("value must be a blob or subtree")
+		}
+		var subTree *git.Tree
+		var old *git.TreeEntry
+		if tree != nil {
+			old = tree.EntryByName(leaf)
+		}
+		// If that subtree already exists, merge the new one in.
+		if old != nil {
+			oldObj, err := repo.Lookup(old.Id)
+			if err != nil {
+				return nil, err
+			}
+			oldTree, ok := oldObj.(*git.Tree)
+			if !ok {
+				return nil, fmt.Errorf("key %s has existing value of unexpected type: %#v", key, oldObj)
+			}
+			subTree = oldTree
+			for i := uint64(0); i < oTree.EntryCount(); i++ {
+				var err error
+				e := oTree.EntryByIndex(i)
+				subTree, err = treeUpdate(repo, subTree, e.Name, e.Id)
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			subTree = oTree
+		}
+		if err := builder.Insert(leaf, subTree.Id(), 040000); err != nil {
+			return nil, err
+		}
+		newTreeId, err := builder.Write()
+		if err != nil {
+			return nil, err
+		}
+		newTree, err := lookupTree(repo, newTreeId)
+		if err != nil {
+			return nil, err
+		}
+		return newTree, nil
+	}
+	subtree, err := treeUpdate(repo, nil, leaf, valueId)
+	if err != nil {
+		return nil, err
+	}
+	return treeUpdate(repo, tree, base, subtree.Id())
 }
 
 // lookupBlob looks up an object at hash `id` in `repo`, and returns
@@ -218,7 +288,11 @@ func (db *DB) lookupBlob(id *git.Oid) (*git.Blob, error) {
 // lookupTree looks up an object at hash `id` in `repo`, and returns
 // it as a git tree. If the object is not a tree, an error is returned.
 func (db *DB) lookupTree(id *git.Oid) (*git.Tree, error) {
-	obj, err := db.repo.Lookup(id)
+	return lookupTree(db.repo, id)
+}
+
+func lookupTree(r *git.Repository, id *git.Oid) (*git.Tree, error) {
+	obj, err := r.Lookup(id)
 	if err != nil {
 		return nil, err
 	}
