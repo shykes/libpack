@@ -5,11 +5,8 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"path"
-	"strings"
 	"sync"
 
 	gitdb "github.com/docker/libpack/db"
@@ -59,87 +56,6 @@ func Unpack(repo, dir, hash string) error {
 	return nil
 }
 
-func Git(repo, idx, worktree string, stdin io.Reader, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"--git-dir", repo}, args...)...)
-	if stdin != nil {
-		cmd.Stdin = stdin
-	}
-	cmd.Stderr = os.Stderr
-	if idx != "" {
-		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+idx)
-	}
-	if worktree != "" {
-		cmd.Env = append(cmd.Env, "GIT_WORK_TREE="+worktree)
-	}
-	fmt.Printf("# %s %s\n", strings.Join(cmd.Env, " "), strings.Join(cmd.Args, " "))
-	out, err := cmd.Output()
-	return string(out), err
-}
-
-func gitWriteTree(repo, idx string) (string, error) {
-	out, err := Git(repo, idx, "", nil, "write-tree")
-	if err != nil {
-		return "", fmt.Errorf("git write-tree: %v", err)
-	}
-	return strings.Trim(string(out), " \t\r\n"), nil
-}
-
-// gitReadTree calls 'git read-tree' with the following settings:
-//     repo is the path to a git repo (bare)
-//     idx is the path to the git index file to update
-//     hash is the hash of the tree object to add
-//     prefix is the prefix at which the tree should be added to the index file
-func gitReadTree(repo, idx, prefix, hash string) error {
-	worktree, err := ioutil.TempDir("", "tmpwd")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(worktree)
-	if _, err := Git(repo, idx, worktree, nil, "read-tree", "--prefix", prefix, hash); err != nil {
-		return fmt.Errorf("git-read-tree: %v", err)
-	}
-	return nil
-}
-
-// lookupTree looks up an object at hash `id` in `repo`, and returns
-// it as a git tree. If the object is not a tree, an error is returned.
-func lookupTree(repo *git.Repository, id *git.Oid) (*git.Tree, error) {
-	obj, err := repo.Lookup(id)
-	if err != nil {
-		return nil, err
-	}
-	if tree, ok := obj.(*git.Tree); ok {
-		return tree, nil
-	}
-	return nil, fmt.Errorf("hash %v exist but is not a tree", id)
-}
-
-// lookupTree looks up an object at hash `id` in `repo`, and returns
-// it as a git commit. If the object is not a commit, an error is returned.
-func lookupCommit(repo *git.Repository, id *git.Oid) (*git.Commit, error) {
-	obj, err := repo.Lookup(id)
-	if err != nil {
-		return nil, err
-	}
-	if commit, ok := obj.(*git.Commit); ok {
-		return commit, nil
-	}
-	return nil, fmt.Errorf("hash %v exist but is not a commit", id)
-}
-
-// lookupBlob looks up an object at hash `id` in `repo`, and returns
-// it as a git blob. If the object is not a blob, an error is returned.
-func lookupBlob(repo *git.Repository, id *git.Oid) (*git.Blob, error) {
-	obj, err := repo.Lookup(id)
-	if err != nil {
-		return nil, err
-	}
-	if blob, ok := obj.(*git.Blob); ok {
-		return blob, nil
-	}
-	return nil, fmt.Errorf("hash %v exist but is not a blob", id)
-}
-
 // lookupTree looks up the entry `name` under the git tree `Tree` in
 // repository `repo`. If `name` includes slashes, it is interpreted as
 // a path in the tree.
@@ -147,25 +63,12 @@ func lookupBlob(repo *git.Repository, id *git.Oid) (*git.Blob, error) {
 // to a git tree (ie a sub-tree).
 // If the entry does not point to a tree (the other option being a blob),
 // an error is returned.
-func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
-	entry, err := tree.EntryByPath(name)
+func lookupMetadata(db *gitdb.DB, name string) (*tar.Header, error) {
+	blob, err := db.Get(metaPath(name))
 	if err != nil {
 		return nil, err
 	}
-	return lookupTree(repo, entry.Id)
-}
-
-func lookupMetadata(repo *git.Repository, tree *git.Tree, name string) (*tar.Header, error) {
-	entry, err := tree.EntryByPath(metaPath(name))
-	if err != nil {
-		return nil, err
-	}
-	blob, err := lookupBlob(repo, entry.Id)
-	if err != nil {
-		return nil, err
-	}
-	defer blob.Free()
-	tr := tar.NewReader(bytes.NewReader(blob.Contents()))
+	tr := tar.NewReader(bytes.NewReader([]byte(blob)))
 	hdr, err := tr.Next()
 	if err != nil {
 		return nil, err
@@ -178,69 +81,29 @@ func lookupMetadata(repo *git.Repository, tree *git.Tree, name string) (*tar.Hea
 // The tree is not buffered on disk or in memory before being streamed.
 func Git2tar(repo, hash string, dst io.Writer) error {
 	tw := tar.NewWriter(dst)
-	r, err := git.InitRepository(repo, true)
+	db, err := gitdb.Init(repo, hash, "")
 	if err != nil {
 		return err
 	}
-	defer r.Free()
-	// Lookup the tree object at `hash` in `repo`
-	treeId, err := git.NewOid(hash)
-	if err != nil {
-		return err
-	}
-	tree, err := lookupTree(r, treeId)
-	if err != nil {
-		return err
-	}
-	defer tree.Free()
-	metaTree, err := lookupSubtree(r, tree, MetaTree)
-	if err != nil {
-		return err
-	}
-	defer metaTree.Free()
-	dataTree, err := lookupSubtree(r, tree, DataTree)
-	if err != nil {
-		return err
-	}
+	defer db.Free()
+	fmt.Printf("head = %s\n", db.Head().String())
 	// Walk the data tree
-	var walkErr error
-	if err := dataTree.Walk(func(name string, entry *git.TreeEntry) int {
-		// FIXME: is it normal that Walk() passes an empty name?
-		// If so, what's the correct way to handle it?
-		// For now we just skip it.
-		if name == "" {
-			return 0
-		}
-		// For each element (blob or subtree) look up the corresponding tar header
-		// from the meta tree
-		hdr, err := lookupMetadata(r, tree, name)
+	return db.Walk(DataTree, func(name string, obj git.Object) error {
+		hdr, err := lookupMetadata(db, name)
 		if err != nil {
-			walkErr = fmt.Errorf("metadata lookup for '%s': %v", name, err)
-			return -1
+			return fmt.Errorf("metadata lookup for '%s': %v", name, err)
 		}
 		// Write the reconstituted tar header+content
 		if err := tw.WriteHeader(hdr); err != nil {
-			walkErr = err
-			return -1
+			return err
 		}
-		if entry.Type == git.ObjectBlob {
-			blob, err := lookupBlob(r, entry.Id)
-			if err != nil {
-				walkErr = err
-				return -1
-			}
+		if blob, isBlob := obj.(*git.Blob); isBlob {
 			if _, err := tw.Write(blob.Contents()); err != nil {
-				walkErr = err
-				return -1
+				return err
 			}
 		}
-		return 0
-	}); err != nil {
-		if walkErr != nil {
-			return walkErr
-		}
-		return err
-	}
+		return nil
+	})
 	return nil
 }
 
