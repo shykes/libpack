@@ -76,13 +76,13 @@ func (db *DB) Walk(key string, h func(string, git.Object) error) error {
 		return err
 	}
 	var handlerErr error
-	err = subtree.Walk(func(name string, e *git.TreeEntry) int {
+	err = subtree.Walk(func(parent string, e *git.TreeEntry) int {
 		obj, err := db.repo.Lookup(e.Id)
 		if err != nil {
 			handlerErr = err
 			return -1
 		}
-		if err := h(path.Join(key, name), obj); err != nil {
+		if err := h(path.Join(parent, e.Name), obj); err != nil {
 			handlerErr = err
 			return -1
 		}

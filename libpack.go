@@ -56,49 +56,37 @@ func Unpack(repo, dir, hash string) error {
 	return nil
 }
 
-// lookupTree looks up the entry `name` under the git tree `Tree` in
-// repository `repo`. If `name` includes slashes, it is interpreted as
-// a path in the tree.
-// If the entry exists, the object it points to is is returned, converted
-// to a git tree (ie a sub-tree).
-// If the entry does not point to a tree (the other option being a blob),
-// an error is returned.
-func lookupMetadata(db *gitdb.DB, name string) (*tar.Header, error) {
-	blob, err := db.Get(metaPath(name))
-	if err != nil {
-		return nil, err
-	}
-	tr := tar.NewReader(bytes.NewReader([]byte(blob)))
-	hdr, err := tr.Next()
-	if err != nil {
-		return nil, err
-	}
-	return hdr, nil
-}
-
 // Git2tar looks for a git tree object at `hash` in a git repository at the path
 // `repo`, then extracts it as a tar stream written to `dst`.
 // The tree is not buffered on disk or in memory before being streamed.
 func Git2tar(repo, hash string, dst io.Writer) error {
 	tw := tar.NewWriter(dst)
+	defer tw.Close()
 	db, err := gitdb.Init(repo, hash, "")
 	if err != nil {
 		return err
 	}
 	defer db.Free()
-	fmt.Printf("head = %s\n", db.Head().String())
+	fmt.Fprintf(os.Stderr, "head = %s\n", db.Head().String())
 	// Walk the data tree
 	return db.Walk(DataTree, func(name string, obj git.Object) error {
-		hdr, err := lookupMetadata(db, name)
+		fmt.Fprintf(os.Stderr, "Generating tar entry for '%s'...\n", name)
+		metaBlob, err := db.Get(metaPath(name))
 		if err != nil {
-			return fmt.Errorf("metadata lookup for '%s': %v", name, err)
+			return err
+		}
+		tr := tar.NewReader(bytes.NewReader([]byte(metaBlob)))
+		hdr, err := tr.Next()
+		if err != nil {
+			return err
 		}
 		// Write the reconstituted tar header+content
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
 		if blob, isBlob := obj.(*git.Blob); isBlob {
-			if _, err := tw.Write(blob.Contents()); err != nil {
+			fmt.Fprintf(os.Stderr, "--> writing %d bytes for blob %s\n", hdr.Size, hdr.Name)
+			if _, err := tw.Write(blob.Contents()[:hdr.Size]); err != nil {
 				return err
 			}
 		}
@@ -113,8 +101,9 @@ func Git2tar(repo, hash string, dst io.Writer) error {
 // This path will be used to store and retrieve the tar header encoding the metadata
 // for the corresponding file.
 func metaPath(name string) string {
+	name = path.Clean(name)
 	// FIXME: this doesn't seem to yield the expected result.
-	return path.Join("_fs_meta", fmt.Sprintf("%0x", sha1.Sum([]byte(name))))
+	return path.Join(MetaTree, fmt.Sprintf("%x", sha1.Sum([]byte(name))))
 }
 
 // Tar2git decodes a tar stream from src, then encodes it into a new git commit
