@@ -63,6 +63,41 @@ func (db *DB) Head() *git.Oid {
 	return nil
 }
 
+func (db *DB) Repo() *git.Repository {
+	return db.repo
+}
+
+func (db *DB) Walk(key string, h func(string, git.Object) error) error {
+	if db.tree == nil {
+		return fmt.Errorf("no tree to walk")
+	}
+	subtree, err := lookupSubtree(db.repo, db.tree, key)
+	if err != nil {
+		return err
+	}
+	var handlerErr error
+	err = subtree.Walk(func(name string, e *git.TreeEntry) int {
+		obj, err := db.repo.Lookup(e.Id)
+		if err != nil {
+			handlerErr = err
+			return -1
+		}
+		if err := h(path.Join(key, name), obj); err != nil {
+			handlerErr = err
+			return -1
+		}
+		obj.Free()
+		return 0
+	})
+	if handlerErr != nil {
+		return handlerErr
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // Update looks up the value of the database's reference, and changes
 // the memory representation accordingly.
 // Uncommitted changes are left untouched (ie they are not merged
@@ -362,4 +397,12 @@ func (db *DB) lookupCommit(id *git.Oid) (*git.Commit, error) {
 		return commit, nil
 	}
 	return nil, fmt.Errorf("hash %v exist but is not a commit", id)
+}
+
+func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
+	entry, err := tree.EntryByPath(name)
+	if err != nil {
+		return nil, err
+	}
+	return lookupTree(repo, entry.Id)
 }
