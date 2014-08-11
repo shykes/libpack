@@ -53,6 +53,14 @@ func (db *DB) Free() {
 	}
 }
 
+// Head returns the id of the latest commit
+func (db *DB) Head() *git.Oid {
+	if db.commit != nil {
+		return db.commit.Id()
+	}
+	return nil
+}
+
 // Update looks up the value of the database's reference, and changes
 // the memory representation accordingly.
 // Uncommitted changes are left untouched (ie they are not merged
