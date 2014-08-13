@@ -199,17 +199,24 @@ func (db *DB) SetStream(key string, src io.Reader) error {
 	return db.Set(key, buf.String())
 }
 
+func treePath(p string) string {
+	p = path.Clean(p)
+	if p == "/" || p == "." {
+		return "/"
+	}
+	// Remove leading / from the path
+	// as libgit2.TreeEntryByPath does not accept it
+	p = strings.TrimLeft(p, "/")
+	return p
+}
+
 // List returns a list of object names at the subtree `key`.
 // If there is no subtree at `key`, an error is returned.
 func (db *DB) List(key string) ([]string, error) {
 	if db.tree == nil {
 		return []string{}, nil
 	}
-	e, err := db.tree.EntryByPath(path.Join(db.scope, key))
-	if err != nil {
-		return nil, err
-	}
-	subtree, err := db.lookupTree(e.Id)
+	subtree, err := lookupSubtree(db.repo, db.tree, path.Join(db.scope, key))
 	if err != nil {
 		return nil, err
 	}
@@ -407,6 +414,15 @@ func (db *DB) lookupCommit(id *git.Oid) (*git.Commit, error) {
 }
 
 func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
+	if tree == nil {
+		return nil, fmt.Errorf("tree undefined")
+	}
+	name = treePath(name)
+	if name == "/" {
+		// Allocate a new Tree object so that the caller
+		// can always call Free() on the result
+		return lookupTree(repo, tree.Id())
+	}
 	entry, err := tree.EntryByPath(name)
 	if err != nil {
 		return nil, err

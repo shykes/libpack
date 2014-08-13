@@ -1,9 +1,11 @@
 package libpack
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +58,42 @@ func TestSetEmpty(t *testing.T) {
 	}
 	if err := db.Set("foo", ""); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestList(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Set("foo", "bar")
+	if db.tree == nil {
+		t.Fatalf("%#v\n")
+	}
+	for _, rootpath := range []string{"", ".", "/", "////", "///."} {
+		names, err := db.List(rootpath)
+		if err != nil {
+			t.Fatalf("%s: %v", rootpath, err)
+		}
+		if fmt.Sprintf("%v", names) != "[foo]" {
+			t.Fatalf("List(%v) =  %#v", rootpath, names)
+		}
+	}
+	for _, wrongpath := range []string{
+		"does-not-exist",
+		"sldhfsjkdfhkjsdfh",
+		"a/b/c/d",
+		"foo/sdfsdf",
+	} {
+		_, err := db.List(wrongpath)
+		if err == nil {
+			t.Fatalf("should fail: %s", wrongpath)
+		}
+		if !strings.Contains(err.Error(), "does not exist in the given tree") {
+			t.Fatalf("wrong error: %v", err)
+		}
 	}
 }
 
