@@ -280,6 +280,37 @@ func (db *DB) Commit(msg string) error {
 	return nil
 }
 
+func (db *DB) Checkout(dir string) error {
+	if db.tree == nil {
+		return fmt.Errorf("no tree")
+	}
+	/*
+		tree, err := lookupSubtree(db.repo, db.tree, db.scope)
+		if err != nil {
+			return err
+		}
+	*/
+	// ^-- We should scope checkout to db.scope.
+	// v-- But for now, we checkout the whole root to facilitat debug
+	tree := db.tree
+	// If the tree is empty, checkout will fail and there is
+	// nothing to do anyway
+	if tree.EntryCount() == 0 {
+		return nil
+	}
+	stderr := new(bytes.Buffer)
+	args := []string{
+		"--git-dir", db.repo.Path(), "--work-tree", dir,
+		"checkout", tree.Id().String(), ".",
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s", stderr.String())
+	}
+	return nil
+}
+
 // treeUpdate creates a new Git tree by adding a new object
 // to it at the specified path.
 // Intermediary subtrees are created as needed.
