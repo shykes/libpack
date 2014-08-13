@@ -133,6 +133,20 @@ func (db *DB) Update() error {
 	return nil
 }
 
+// Mkdir adds an empty subtree at key if it doesn't exist.
+func (db *DB) Mkdir(key string) error {
+	empty, err := emptyTree(db.repo)
+	if err != nil {
+		return fmt.Errorf("emptyTree: %v", err)
+	}
+	newTree, err := treeUpdate(db.repo, db.tree, path.Join(db.scope, key), empty)
+	if err != nil {
+		return fmt.Errorf("treeUpdate: %v", err)
+	}
+	db.tree = newTree
+	return nil
+}
+
 // Get returns the value of the Git blob at path `key`.
 // If there is no blob at the specified key, an error
 // is returned.
@@ -280,8 +294,7 @@ func (db *DB) Commit(msg string) error {
 // FIXME: manage garbage collection, or provide a list of created
 // objects.
 func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid) (*git.Tree, error) {
-	key = path.Clean(key)
-	key = strings.TrimLeft(key, "/") // Remove trailing slashes
+	key = treePath(key)
 	base, leaf := path.Split(key)
 	o, err := repo.Lookup(valueId)
 	if err != nil {
@@ -300,7 +313,7 @@ func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 		}
 	}
 	defer builder.Free()
-	if base == "" {
+	if base == "" || base == "/" {
 		// If val is a string, set it and we're done.
 		// Any old value is overwritten.
 		if _, isBlob := o.(*git.Blob); isBlob {
@@ -324,20 +337,16 @@ func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 			return nil, fmt.Errorf("value must be a blob or subtree")
 		}
 		var subTree *git.Tree
-		var old *git.TreeEntry
+		var oldTree *git.Tree
 		if tree != nil {
-			old = tree.EntryByName(leaf)
-		}
-		// If that subtree already exists, merge the new one in.
-		if old != nil {
-			oldObj, err := repo.Lookup(old.Id)
+			oldTree, err := lookupSubtree(repo, tree, leaf)
 			if err != nil {
 				return nil, err
 			}
-			oldTree, ok := oldObj.(*git.Tree)
-			if !ok {
-				return nil, fmt.Errorf("key %s has existing value of unexpected type: %#v", key, oldObj)
-			}
+			defer oldTree.Free()
+		}
+		// If that subtree already exists, merge the new one in.
+		if oldTree != nil {
 			subTree = oldTree
 			for i := uint64(0); i < oTree.EntryCount(); i++ {
 				var err error
@@ -350,6 +359,11 @@ func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 		} else {
 			subTree = oTree
 		}
+		// If the key is /, we're replacing the current tree
+		if key == "/" {
+			return subTree, nil
+		}
+		// Otherwise we're inserting into the current tree
 		if err := builder.Insert(leaf, subTree.Id(), 040000); err != nil {
 			return nil, err
 		}
@@ -428,4 +442,14 @@ func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree
 		return nil, err
 	}
 	return lookupTree(repo, entry.Id)
+}
+
+// emptyTree creates an empty Git tree and returns its ID
+// (the ID will always be the same)
+func emptyTree(repo *git.Repository) (*git.Oid, error) {
+	builder, err := repo.TreeBuilder()
+	if err != nil {
+		return nil, err
+	}
+	return builder.Write()
 }
