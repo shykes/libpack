@@ -63,6 +63,13 @@ func (db *DB) Head() *git.Oid {
 	return nil
 }
 
+func (db *DB) Latest() *git.Oid {
+	if db.tree != nil {
+		return db.tree.Id()
+	}
+	return nil
+}
+
 func (db *DB) Repo() *git.Repository {
 	return db.repo
 }
