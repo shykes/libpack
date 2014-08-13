@@ -191,7 +191,7 @@ func (db *DB) Set(key, value string) error {
 		}
 	}
 	// note: db.tree might be nil if this is the first entry
-	newTree, err := treeUpdate(db.repo, db.tree, key, id)
+	newTree, err := treeUpdate(db.repo, db.tree, path.Join(db.scope, key), id)
 	if err != nil {
 		return fmt.Errorf("treeupdate: %v", err)
 	}
