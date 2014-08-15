@@ -74,6 +74,17 @@ func (db *DB) Repo() *git.Repository {
 	return db.repo
 }
 
+func (db *DB) Dump(dst io.Writer) error {
+	return db.Walk("/", func(key string, obj git.Object) error {
+		if _, isTree := obj.(*git.Tree); isTree {
+			fmt.Fprintf(dst, "%s/\n", key)
+		} else if blob, isBlob := obj.(*git.Blob); isBlob {
+			fmt.Fprintf(dst, "%s = %s\n", key, blob.Contents())
+		}
+		return nil
+	})
+}
+
 func (db *DB) Walk(key string, h func(string, git.Object) error) error {
 	if db.tree == nil {
 		return fmt.Errorf("no tree to walk")
