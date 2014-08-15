@@ -32,8 +32,28 @@ func Init(repo, ref, scope string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	db, err := newRepo(r, ref, scope)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+func Open(repo, ref, scope string) (*DB, error) {
+	r, err := git.OpenRepository(repo)
+	if err != nil {
+		return nil, err
+	}
+	db, err := newRepo(r, ref, scope)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+func newRepo(repo *git.Repository, ref, scope string) (*DB, error) {
 	db := &DB{
-		repo:  r,
+		repo:  repo,
 		ref:   ref,
 		scope: scope,
 	}
