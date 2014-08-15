@@ -114,6 +114,68 @@ func TestSetGetSimple(t *testing.T) {
 	}
 }
 
+func TestSetGetMultiple(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("foo", "bar"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("ga", "bu"); err != nil {
+		t.Fatal(err)
+	}
+	if key, err := db.Get("foo"); err != nil {
+		t.Fatal(err)
+	} else if key != "bar" {
+		t.Fatalf("%#v", key)
+	}
+	if key, err := db.Get("ga"); err != nil {
+		t.Fatal(err)
+	} else if key != "bu" {
+		t.Fatalf("%#v", key)
+	}
+}
+
+func TestSetCommitGet(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("foo", "bar"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("ga", "bu"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Commit("test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("ga", "added after commit"); err != nil {
+		t.Fatal(err)
+	}
+	db.Free()
+	db, err = Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val, err := db.Get("foo"); err != nil {
+		t.Fatal(err)
+	} else if val != "bar" {
+		t.Fatalf("%#v", val)
+	}
+	if val, err := db.Get("ga"); err != nil {
+		t.Fatal(err)
+	} else if val != "bu" {
+		t.Fatalf("%#v", val)
+	}
+}
+
+
 func TestSetGetNested(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
