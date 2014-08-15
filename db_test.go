@@ -175,7 +175,6 @@ func TestSetCommitGet(t *testing.T) {
 	}
 }
 
-
 func TestSetGetNested(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
@@ -190,5 +189,28 @@ func TestSetGetNested(t *testing.T) {
 		t.Fatal(err)
 	} else if key != "world" {
 		t.Fatalf("%#v", key)
+	}
+}
+
+func TestSetGetNestedMultiple(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := []string{"1", "2", "3", "4"}
+	for _, root := range roots {
+		if err := db.Set(root+"/a/b/c/d/hello", "world"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, root := range roots {
+		if key, err := db.Get(root + "/a/b/c/d/hello"); err != nil {
+			db.Dump(os.Stderr)
+			t.Fatal(err)
+		} else if key != "world" {
+			t.Fatalf("%#v", key)
+		}
 	}
 }
