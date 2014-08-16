@@ -192,25 +192,68 @@ func TestSetGetNested(t *testing.T) {
 	}
 }
 
+func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]string) {
+	fmt.Printf("testSetGet refs=%v scopes=%v components=%v\n", refs, scopes, components)
+	for _, ref := range refs {
+		for _, scope := range scopes {
+			tmp := tmpdir(t)
+			defer os.RemoveAll(tmp)
+			db, err := Init(tmp, ref, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(components) == 0 {
+				return
+			}
+			if len(components) == 1 {
+				for _, k := range components[0] {
+					if err := db.Set(k, "hello world"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, k := range components[0] {
+					if v, err := db.Get(k); err != nil {
+						t.Fatal(err)
+					} else if v != "hello world" {
+						db.Dump(os.Stderr)
+						t.Fatal(err)
+					}
+				}
+				return
+			}
+			// len(components) >= 2
+			first := make([]string, 0, len(components[0])*len(components[1]))
+			for _, prefix := range components[0] {
+				for _, suffix := range components[1] {
+					first = append(first, path.Join(prefix, suffix))
+				}
+			}
+			newComponents := append([][]string{first}, components[2:]...)
+			testSetGet(t, []string{ref}, []string{scope}, newComponents...)
+		}
+	}
+}
+
+func TestSetGetNestedMultiple1(t *testing.T) {
+	testSetGet(t,
+		[]string{"refs/heads/test"},
+		[]string{""},
+		[]string{"foo"}, []string{"1", "2", "3", "4"}, []string{"/a/b/c/d/hello"},
+	)
+}
+
 func TestSetGetNestedMultiple(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	roots := []string{"1", "2", "3", "4"}
-	for _, root := range roots {
-		if err := db.Set(root+"/a/b/c/d/hello", "world"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, root := range roots {
-		if key, err := db.Get(root + "/a/b/c/d/hello"); err != nil {
-			db.Dump(os.Stderr)
-			t.Fatal(err)
-		} else if key != "world" {
-			t.Fatalf("%#v", key)
-		}
-	}
+	testSetGet(t,
+		[]string{"refs/heads/test"},
+		[]string{""},
+		[]string{"1", "2", "3", "4"}, []string{"/a/b/c/d/hello"},
+	)
+}
+
+func TestSetGetNestedMultipleScoped(t *testing.T) {
+	testSetGet(t,
+		[]string{"refs/heads/test"},
+		[]string{"0.1"},
+		[]string{"1", "2", "3", "4"}, []string{"/a/b/c/d/hello"},
+	)
 }
