@@ -86,7 +86,7 @@ func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 		var subTree *git.Tree
 		var oldSubTree *git.Tree
 		if tree != nil {
-			oldSubTree, err := lookupSubtree(repo, tree, leaf)
+			oldSubTree, err = lookupSubtree(repo, tree, leaf)
 			// FIXME: distinguish "no such key" error (which
 			// FIXME: distinguish a non-existing previous tree (continue with oldTree==nil)
 			// from other errors (abort and return an error)
