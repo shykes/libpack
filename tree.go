@@ -59,6 +59,7 @@ func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 		}
 	}
 	defer builder.Free()
+	// The specified path has only 1 component (the "leaf")
 	if base == "" || base == "/" {
 		// If val is a string, set it and we're done.
 		// Any old value is overwritten.
@@ -83,20 +84,19 @@ func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 			return nil, fmt.Errorf("value must be a blob or subtree")
 		}
 		var subTree *git.Tree
-		var oldTree *git.Tree
+		var oldSubTree *git.Tree
 		if tree != nil {
-			fmt.Printf("Looking up %s in base tree %v\n", leaf, tree.Id())
-			oldTree, err := lookupSubtree(repo, tree, leaf)
+			oldSubTree, err := lookupSubtree(repo, tree, leaf)
 			// FIXME: distinguish "no such key" error (which
 			// FIXME: distinguish a non-existing previous tree (continue with oldTree==nil)
 			// from other errors (abort and return an error)
 			if err == nil {
-				defer oldTree.Free()
+				defer oldSubTree.Free()
 			}
 		}
 		// If that subtree already exists, merge the new one in.
-		if oldTree != nil {
-			subTree = oldTree
+		if oldSubTree != nil {
+			subTree = oldSubTree
 			for i := uint64(0); i < oTree.EntryCount(); i++ {
 				var err error
 				e := oTree.EntryByIndex(i)
