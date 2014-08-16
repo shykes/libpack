@@ -281,12 +281,22 @@ func (db *DB) List(key string) ([]string, error) {
 // into a new Git commit object, and updates the database's reference
 // to point to that commit.
 func (db *DB) Commit(msg string) error {
+	if db.tree == nil {
+		return fmt.Errorf("nothing to commit")
+	}
 	// FIXME: the ref might have been changed by another
 	// process. We must implement either 1) reliable locking
 	// or 2) a solid merge resolution strategy.
 	// For now we simply assume the ref has not changed.
 	var parents []*git.Commit
 	if db.commit != nil {
+		commitTree, err := db.commit.Tree()
+		if err != nil {
+			return err
+		}
+		if commitTree.Id().Equal(db.tree.Id()) {
+			return fmt.Errorf("nothing to commit")
+		}
 		parents = append(parents, db.commit)
 	}
 	commitId, err := db.repo.CreateCommit(
