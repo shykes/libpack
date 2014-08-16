@@ -257,3 +257,24 @@ func TestSetGetNestedMultipleScoped(t *testing.T) {
 		[]string{"1", "2", "3", "4"}, []string{"/a/b/c/d/hello"},
 	)
 }
+
+func TestMkdir(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Mkdir("/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Mkdir("something"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Mkdir("something"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Mkdir("foo/bar"); err != nil {
+		t.Fatal(err)
+	}
+}
