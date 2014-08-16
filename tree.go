@@ -40,7 +40,7 @@ func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 	** 		}
 	** 	}()
 	 */
-	key = treePath(key)
+	key = TreePath(key)
 	base, leaf := path.Split(key)
 	o, err := repo.Lookup(valueId)
 	if err != nil {

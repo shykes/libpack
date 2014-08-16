@@ -244,7 +244,7 @@ func (db *DB) SetStream(key string, src io.Reader) error {
 	return db.Set(key, buf.String())
 }
 
-func treePath(p string) string {
+func TreePath(p string) string {
 	p = path.Clean(p)
 	if p == "/" || p == "." {
 		return "/"
@@ -399,7 +399,7 @@ func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree
 	if tree == nil {
 		return nil, fmt.Errorf("tree undefined")
 	}
-	name = treePath(name)
+	name = TreePath(name)
 	if name == "/" {
 		// Allocate a new Tree object so that the caller
 		// can always call Free() on the result
