@@ -107,6 +107,10 @@ func (db *DB) Repo() *git.Repository {
 	return db.repo
 }
 
+func (db *DB) Tree() (*git.Tree, error) {
+	return TreeScope(db.repo, db.tree, db.scope)
+}
+
 func (db *DB) Dump(dst io.Writer) error {
 	return TreeDump(db.repo, db.tree, path.Join(db.scope, "/"), dst)
 }
