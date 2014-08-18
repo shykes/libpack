@@ -355,7 +355,26 @@ func (db *DB) Checkout(dir string) error {
 // to perform garbage collection, if any.
 // FIXME: manage garbage collection, or provide a list of created
 // objects.
-func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid) (*git.Tree, error) {
+func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid) (t *git.Tree, err error) {
+	/*
+	** // Primitive but convenient tracing for debugging recursive calls to treeUpdate.
+	** // Uncomment this block for debug output.
+	**
+	** var callString string
+	** if tree != nil {
+	** 		callString = fmt.Sprintf("   treeUpdate %v:\t\t%s\t\t\t= %v", tree.Id(), key, valueId)
+	** 	} else {
+	** 		callString = fmt.Sprintf("   treeUpdate %v:\t\t%s\t\t\t= %v", tree, key, valueId)
+	** 	}
+	** 	fmt.Printf("   %s\n", callString)
+	** 	defer func() {
+	** 		if t != nil {
+	** 			fmt.Printf("-> %s => %v\n", callString, t.Id())
+	** 		} else {
+	** 			fmt.Printf("-> %s => %v\n", callString, err)
+	** 		}
+	** 	}()
+	 */
 	key = treePath(key)
 	base, leaf := path.Split(key)
 	o, err := repo.Lookup(valueId)
