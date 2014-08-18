@@ -170,9 +170,9 @@ func (db *DB) Mkdir(key string) error {
 	if err != nil {
 		return fmt.Errorf("emptyTree: %v", err)
 	}
-	newTree, err := treeUpdate(db.repo, db.tree, path.Join(db.scope, key), empty)
+	newTree, err := TreeUpdate(db.repo, db.tree, path.Join(db.scope, key), empty)
 	if err != nil {
-		return fmt.Errorf("treeUpdate: %v", err)
+		return fmt.Errorf("TreeUpdate: %v", err)
 	}
 	db.tree = newTree
 	return nil
@@ -222,7 +222,7 @@ func (db *DB) Set(key, value string) error {
 		}
 	}
 	// note: db.tree might be nil if this is the first entry
-	newTree, err := treeUpdate(db.repo, db.tree, path.Join(db.scope, key), id)
+	newTree, err := TreeUpdate(db.repo, db.tree, path.Join(db.scope, key), id)
 	if err != nil {
 		return fmt.Errorf("treeupdate: %v", err)
 	}
@@ -340,132 +340,6 @@ func (db *DB) Checkout(dir string) error {
 		return fmt.Errorf("%s", stderr.String())
 	}
 	return nil
-}
-
-// treeUpdate creates a new Git tree by adding a new object
-// to it at the specified path.
-// Intermediary subtrees are created as needed.
-// If an object already exists at key or any intermediary path,
-// it is overwritten.
-//
-// Since git trees are immutable, base is not modified. The new
-// tree is returned.
-// If an error is encountered, intermediary objects may be left
-// behind in the git repository. It is the caller's responsibility
-// to perform garbage collection, if any.
-// FIXME: manage garbage collection, or provide a list of created
-// objects.
-func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid) (t *git.Tree, err error) {
-	/*
-	** // Primitive but convenient tracing for debugging recursive calls to treeUpdate.
-	** // Uncomment this block for debug output.
-	**
-	** var callString string
-	** if tree != nil {
-	** 		callString = fmt.Sprintf("   treeUpdate %v:\t\t%s\t\t\t= %v", tree.Id(), key, valueId)
-	** 	} else {
-	** 		callString = fmt.Sprintf("   treeUpdate %v:\t\t%s\t\t\t= %v", tree, key, valueId)
-	** 	}
-	** 	fmt.Printf("   %s\n", callString)
-	** 	defer func() {
-	** 		if t != nil {
-	** 			fmt.Printf("-> %s => %v\n", callString, t.Id())
-	** 		} else {
-	** 			fmt.Printf("-> %s => %v\n", callString, err)
-	** 		}
-	** 	}()
-	 */
-	key = treePath(key)
-	base, leaf := path.Split(key)
-	o, err := repo.Lookup(valueId)
-	if err != nil {
-		return nil, err
-	}
-	var builder *git.TreeBuilder
-	if tree == nil {
-		builder, err = repo.TreeBuilder()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		builder, err = repo.TreeBuilderFromTree(tree)
-		if err != nil {
-			return nil, err
-		}
-	}
-	defer builder.Free()
-	if base == "" || base == "/" {
-		// If val is a string, set it and we're done.
-		// Any old value is overwritten.
-		if _, isBlob := o.(*git.Blob); isBlob {
-			if err := builder.Insert(leaf, valueId, 0100644); err != nil {
-				return nil, err
-			}
-			newTreeId, err := builder.Write()
-			if err != nil {
-				return nil, err
-			}
-			newTree, err := lookupTree(repo, newTreeId)
-			if err != nil {
-				return nil, err
-			}
-			return newTree, nil
-		}
-		// If val is not a string, it must be a subtree.
-		// Return an error if it's any other type than Tree.
-		oTree, ok := o.(*git.Tree)
-		if !ok {
-			return nil, fmt.Errorf("value must be a blob or subtree")
-		}
-		var subTree *git.Tree
-		var oldTree *git.Tree
-		if tree != nil {
-			fmt.Printf("Looking up %s in base tree %v\n", leaf, tree.Id())
-			oldTree, err := lookupSubtree(repo, tree, leaf)
-			// FIXME: distinguish "no such key" error (which
-			// FIXME: distinguish a non-existing previous tree (continue with oldTree==nil)
-			// from other errors (abort and return an error)
-			if err == nil {
-				defer oldTree.Free()
-			}
-		}
-		// If that subtree already exists, merge the new one in.
-		if oldTree != nil {
-			subTree = oldTree
-			for i := uint64(0); i < oTree.EntryCount(); i++ {
-				var err error
-				e := oTree.EntryByIndex(i)
-				subTree, err = treeUpdate(repo, subTree, e.Name, e.Id)
-				if err != nil {
-					return nil, err
-				}
-			}
-		} else {
-			subTree = oTree
-		}
-		// If the key is /, we're replacing the current tree
-		if key == "/" {
-			return subTree, nil
-		}
-		// Otherwise we're inserting into the current tree
-		if err := builder.Insert(leaf, subTree.Id(), 040000); err != nil {
-			return nil, err
-		}
-		newTreeId, err := builder.Write()
-		if err != nil {
-			return nil, err
-		}
-		newTree, err := lookupTree(repo, newTreeId)
-		if err != nil {
-			return nil, err
-		}
-		return newTree, nil
-	}
-	subtree, err := treeUpdate(repo, nil, leaf, valueId)
-	if err != nil {
-		return nil, err
-	}
-	return treeUpdate(repo, tree, base, subtree.Id())
 }
 
 // lookupBlob looks up an object at hash `id` in `repo`, and returns
