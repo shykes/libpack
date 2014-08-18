@@ -2,6 +2,8 @@ package libpack
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path"
 
 	git "github.com/libgit2/git2go"
@@ -90,7 +92,7 @@ func treeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid,
 		var subTree *git.Tree
 		var oldSubTree *git.Tree
 		if tree != nil {
-			oldSubTree, err = lookupSubtree(repo, tree, leaf)
+			oldSubTree, err = TreeScope(repo, tree, leaf)
 			// FIXME: distinguish "no such key" error (which
 			// FIXME: distinguish a non-existing previous tree (continue with oldTree==nil)
 			// from other errors (abort and return an error)
@@ -135,4 +137,84 @@ func treeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid,
 		return nil, err
 	}
 	return treeAdd(repo, tree, base, subtree.Id(), merge)
+}
+
+func TreeGet(r *git.Repository, t *git.Tree, key string) (string, error) {
+	if t == nil {
+		return "", os.ErrNotExist
+	}
+	key = TreePath(key)
+	e, err := t.EntryByPath(key)
+	if err != nil {
+		return "", err
+	}
+	blob, err := lookupBlob(r, e.Id)
+	if err != nil {
+		return "", err
+	}
+	defer blob.Free()
+	return string(blob.Contents()), nil
+
+}
+
+func TreeList(r *git.Repository, t *git.Tree, key string) ([]string, error) {
+	if t == nil {
+		return []string{}, nil
+	}
+	subtree, err := TreeScope(r, t, key)
+	if err != nil {
+		return nil, err
+	}
+	defer subtree.Free()
+	var (
+		i     uint64
+		count uint64 = subtree.EntryCount()
+	)
+	entries := make([]string, 0, count)
+	for i = 0; i < count; i++ {
+		entries = append(entries, subtree.EntryByIndex(i).Name)
+	}
+	return entries, nil
+}
+
+func TreeWalk(r *git.Repository, t *git.Tree, key string, h func(string, git.Object) error) error {
+	if t == nil {
+		return fmt.Errorf("no tree to walk")
+	}
+	subtree, err := TreeScope(r, t, key)
+	if err != nil {
+		return err
+	}
+	var handlerErr error
+	err = subtree.Walk(func(parent string, e *git.TreeEntry) int {
+		obj, err := r.Lookup(e.Id)
+		if err != nil {
+			handlerErr = err
+			return -1
+		}
+		if err := h(path.Join(parent, e.Name), obj); err != nil {
+			handlerErr = err
+			return -1
+		}
+		obj.Free()
+		return 0
+	})
+	if handlerErr != nil {
+		return handlerErr
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func TreeDump(r *git.Repository, t *git.Tree, key string, dst io.Writer) error {
+	return TreeWalk(r, t, key, func(key string, obj git.Object) error {
+		if _, isTree := obj.(*git.Tree); isTree {
+			fmt.Fprintf(dst, "%s/\n", key)
+		} else if blob, isBlob := obj.(*git.Blob); isBlob {
+			fmt.Fprintf(dst, "%s = %s\n", key, blob.Contents())
+		}
+		return nil
+	})
 }
