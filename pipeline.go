@@ -149,11 +149,21 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 				{
 					id = val
 				}
+			case *DB:
+				{
+					tree, err := val.Tree()
+					// FIXME: distinguish "no such entry" errors (which we can ignore)
+					// from other errors (which we should forward)
+					if err == nil && tree != nil {
+						id = tree.Id()
+					}
+				}
 			default:
 				{
-					return nil, fmt.Errorf("invalid value: %v", val)
+					return nil, fmt.Errorf("invalid value: %#v", val)
 				}
 			}
+			fmt.Printf("ADD %s %v\n", arg.key, id)
 			return treeAdd(t.repo, in, arg.key, id, arg.merge)
 		}
 	case OpMkdir:
