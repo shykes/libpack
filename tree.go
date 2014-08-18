@@ -46,6 +46,9 @@ func treeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid,
 	** 		}
 	** 	}()
 	 */
+	if valueId == nil {
+		return tree, nil
+	}
 	key = TreePath(key)
 	base, leaf := path.Split(key)
 	o, err := repo.Lookup(valueId)
