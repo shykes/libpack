@@ -420,11 +420,14 @@ func treeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 		var subTree *git.Tree
 		var oldTree *git.Tree
 		if tree != nil {
+			fmt.Printf("Looking up %s in base tree %v\n", leaf, tree.Id())
 			oldTree, err := lookupSubtree(repo, tree, leaf)
-			if err != nil {
-				return nil, err
+			// FIXME: distinguish "no such key" error (which
+			// FIXME: distinguish a non-existing previous tree (continue with oldTree==nil)
+			// from other errors (abort and return an error)
+			if err == nil {
+				defer oldTree.Free()
 			}
-			defer oldTree.Free()
 		}
 		// If that subtree already exists, merge the new one in.
 		if oldTree != nil {
