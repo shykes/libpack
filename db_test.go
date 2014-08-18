@@ -537,3 +537,20 @@ func TestAddDB(t *testing.T) {
 	assertGet(t, db2, "db1/foo/bar/abc", "xyz")
 	assertGet(t, db2, "db1/foo/bar/abc", "xyz")
 }
+
+func TestEmptyCommit(t *testing.T) {
+	db := tmpDB(t, "")
+	defer nukeDB(db)
+	if err := db.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+	db.Set("foo", "bar")
+	// This should commit something
+	if err := db.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+	// This should commit nothing (but not fail)
+	if err := db.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+}

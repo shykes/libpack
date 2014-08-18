@@ -314,7 +314,8 @@ func (db *DB) Commit(msg string) error {
 		return db.parent.Commit(msg)
 	}
 	if db.tree == nil {
-		return fmt.Errorf("nothing to commit")
+		// Nothing to commit
+		return nil
 	}
 	// FIXME: the ref might have been changed by another
 	// process. We must implement either 1) reliable locking
@@ -327,7 +328,8 @@ func (db *DB) Commit(msg string) error {
 			return err
 		}
 		if commitTree.Id().Equal(db.tree.Id()) {
-			return fmt.Errorf("nothing to commit")
+			// Nothing to commit
+			return nil
 		}
 		parents = append(parents, db.commit)
 	}
