@@ -24,13 +24,13 @@ type DB struct {
 	parent *DB
 }
 
-func (db *DB) Scope(scope string) *DB {
+func (db *DB) Scope(scope ...string) *DB {
 	// FIXME: do we risk duplicate db.repo.Free()?
 	return &DB{
 		repo:   db.repo,
 		commit: db.commit,
 		ref:    db.ref,
-		scope:  scope, // If parent!=nil, scope is relative to parent
+		scope:  path.Join(scope...), // If parent!=nil, scope is relative to parent
 		tree:   db.tree,
 		parent: db,
 	}
