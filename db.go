@@ -346,10 +346,25 @@ func (db *DB) Commit(msg string) error {
 
 // Checkout populates the directory at dir with the committed
 // contents of db. Uncommitted changes are ignored.
-func (db *DB) Checkout(dir string) error {
+//
+// As a convenience, if dir is an empty string, a temporary directory
+// is created and returned, and the caller is responsible for removing it.
+//
+func (db *DB) Checkout(dir string) (checkoutDir string, err error) {
 	head := db.Head()
 	if head == nil {
-		return fmt.Errorf("no head to checkout")
+		return "", fmt.Errorf("no head to checkout")
+	}
+	if dir == "" {
+		dir, err = ioutil.TempDir("", "libpack-checkout-")
+		if err != nil {
+			return "", err
+		}
+		defer func() {
+			if err != nil {
+				os.RemoveAll(dir)
+			}
+		}()
 	}
 	stderr := new(bytes.Buffer)
 	args := []string{
@@ -359,9 +374,9 @@ func (db *DB) Checkout(dir string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s", stderr.String())
+		return "", fmt.Errorf("%s", stderr.String())
 	}
-	return nil
+	return dir, nil
 }
 
 // Checkout populates the directory at dir with the uncommitted
