@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -343,6 +344,24 @@ func (db *DB) Commit(msg string) error {
 	return nil
 }
 
+func (db *DB) CheckoutHead(dir string) error {
+	head := db.Head()
+	if head == nil {
+		return fmt.Errorf("no head to checkout")
+	}
+	stderr := new(bytes.Buffer)
+	args := []string{
+		"--git-dir", db.repo.Path(), "--work-tree", dir,
+		"checkout", head.String(),
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s", stderr.String())
+	}
+	return nil
+}
+
 func (db *DB) Checkout(dir string) error {
 	if db.tree == nil {
 		return fmt.Errorf("no tree")
@@ -361,14 +380,33 @@ func (db *DB) Checkout(dir string) error {
 	if tree.EntryCount() == 0 {
 		return nil
 	}
-	stderr := new(bytes.Buffer)
-	args := []string{
-		"--git-dir", db.repo.Path(), "--work-tree", dir,
-		"checkout", tree.Id().String(), ".",
+	idx, err := ioutil.TempFile("", "libpack-index")
+	if err != nil {
+		return err
 	}
-	cmd := exec.Command("git", args...)
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
+	defer os.RemoveAll(idx.Name())
+	readTree := exec.Command(
+		"git",
+		"--git-dir", db.repo.Path(),
+		"--work-tree", dir,
+		"read-tree", tree.Id().String(),
+	)
+	readTree.Env = append(readTree.Env, "GIT_INDEX_FILE="+idx.Name())
+	stderr := new(bytes.Buffer)
+	readTree.Stderr = stderr
+	if err := readTree.Run(); err != nil {
+		return fmt.Errorf("%s", stderr.String())
+	}
+	checkoutIndex := exec.Command(
+		"git",
+		"--git-dir", db.repo.Path(),
+		"--work-tree", dir,
+		"checkout-index",
+	)
+	checkoutIndex.Env = append(checkoutIndex.Env, "GIT_INDEX_FILE="+idx.Name())
+	stderr = new(bytes.Buffer)
+	checkoutIndex.Stderr = stderr
+	if err := checkoutIndex.Run(); err != nil {
 		return fmt.Errorf("%s", stderr.String())
 	}
 	return nil
