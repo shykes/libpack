@@ -20,6 +20,19 @@ type DB struct {
 	ref    string
 	scope  string
 	tree   *git.Tree
+	parent *DB
+}
+
+func (db *DB) Scope(scope string) *DB {
+	// FIXME: do we risk duplicate db.repo.Free()?
+	return &DB{
+		repo: db.repo,
+		commit: db.commit,
+		ref: db.ref,
+		scope: scope, // If parent!=nil, scope is relative to parent
+		tree: db.tree,
+		parent: db,
+	}
 }
 
 // Init initializes a new git-backed database from the following
@@ -166,6 +179,9 @@ func (db *DB) Update() error {
 
 // Mkdir adds an empty subtree at key if it doesn't exist.
 func (db *DB) Mkdir(key string) error {
+	if db.parent != nil {
+		return db.parent.Mkdir(path.Join(db.scope, key))
+	}
 	empty, err := emptyTree(db.repo)
 	if err != nil {
 		return fmt.Errorf("emptyTree: %v", err)
@@ -200,6 +216,9 @@ func (db *DB) Get(key string) (string, error) {
 // Set writes the specified value in a Git blob, and updates the
 // uncommitted tree to point to that blob as `key`.
 func (db *DB) Set(key, value string) error {
+	if db.parent != nil {
+		return db.parent.Set(path.Join(db.scope, key), value)
+	}
 	var (
 		id  *git.Oid
 		err error
@@ -281,6 +300,9 @@ func (db *DB) List(key string) ([]string, error) {
 // into a new Git commit object, and updates the database's reference
 // to point to that commit.
 func (db *DB) Commit(msg string) error {
+	if db.parent != nil {
+		return db.parent.Commit(msg)
+	}
 	if db.tree == nil {
 		return fmt.Errorf("nothing to commit")
 	}
