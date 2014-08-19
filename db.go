@@ -427,6 +427,26 @@ func (db *DB) CheckoutUncommitted(dir string) error {
 	return nil
 }
 
+// ExecInCheckout checks out the committed contents of the database into a
+// temporary directory, executes the specified command in a new subprocess
+// with that directory as the working directory, then removes the directory.
+//
+// The standard input, output and error streams of the command are the same
+// as the current process's.
+func (db *DB) ExecInCheckout(path string, args ...string) error {
+	checkout, err := db.Checkout("")
+	if err != nil {
+		return fmt.Errorf("checkout: %v", err)
+	}
+	defer os.RemoveAll(checkout)
+	cmd := exec.Command(path, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = checkout
+	return cmd.Run()
+}
+
 // lookupBlob looks up an object at hash `id` in `repo`, and returns
 // it as a git blob. If the object is not a blob, an error is returned.
 func (db *DB) lookupBlob(id *git.Oid) (*git.Blob, error) {
