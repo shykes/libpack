@@ -344,7 +344,9 @@ func (db *DB) Commit(msg string) error {
 	return nil
 }
 
-func (db *DB) CheckoutHead(dir string) error {
+// Checkout populates the directory at dir with the committed
+// contents of db. Uncommitted changes are ignored.
+func (db *DB) Checkout(dir string) error {
 	head := db.Head()
 	if head == nil {
 		return fmt.Errorf("no head to checkout")
@@ -362,19 +364,17 @@ func (db *DB) CheckoutHead(dir string) error {
 	return nil
 }
 
-func (db *DB) Checkout(dir string) error {
+// Checkout populates the directory at dir with the uncommitted
+// contents of db.
+// FIXME: this does not work properly at the moment.
+func (db *DB) CheckoutUncommitted(dir string) error {
 	if db.tree == nil {
 		return fmt.Errorf("no tree")
 	}
-	/*
-		tree, err := lookupSubtree(db.repo, db.tree, db.scope)
-		if err != nil {
-			return err
-		}
-	*/
-	// ^-- We should scope checkout to db.scope.
-	// v-- But for now, we checkout the whole root to facilitat debug
-	tree := db.tree
+	tree, err := lookupSubtree(db.repo, db.tree, db.scope)
+	if err != nil {
+		return err
+	}
 	// If the tree is empty, checkout will fail and there is
 	// nothing to do anyway
 	if tree.EntryCount() == 0 {

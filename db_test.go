@@ -278,3 +278,64 @@ func TestMkdir(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCheckout(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("foo/bar/baz", "hello world"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Commit("test"); err != nil {
+		t.Fatal(err)
+	}
+	checkoutTmp := tmpdir(t)
+	if err := db.Checkout(checkoutTmp); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path.Join(checkoutTmp, "foo/bar/baz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := ioutil.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "hello world" {
+		t.Fatalf("%#v", data)
+	}
+}
+
+func TestCheckoutUncommitted(t *testing.T) {
+	t.Skip("FIXME: DB.CheckoutUncommitted does not work properly at the moment")
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Set("foo/bar/baz", "hello world"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Commit("test"); err != nil {
+		t.Fatal(err)
+	}
+	checkoutTmp := tmpdir(t)
+	if err := db.CheckoutUncommitted(checkoutTmp); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path.Join(checkoutTmp, "foo/bar/baz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := ioutil.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "hello world" {
+		t.Fatalf("%#v", data)
+	}
+}
