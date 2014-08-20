@@ -351,6 +351,9 @@ func (db *DB) Commit(msg string) error {
 // is created and returned, and the caller is responsible for removing it.
 //
 func (db *DB) Checkout(dir string) (checkoutDir string, err error) {
+	if db.parent != nil {
+		return db.parent.Checkout(path.Join(db.scope, dir))
+	}
 	head := db.Head()
 	if head == nil {
 		return "", fmt.Errorf("no head to checkout")
@@ -369,14 +372,18 @@ func (db *DB) Checkout(dir string) (checkoutDir string, err error) {
 	stderr := new(bytes.Buffer)
 	args := []string{
 		"--git-dir", db.repo.Path(), "--work-tree", dir,
-		"checkout", head.String(),
+		"checkout", head.String(), ".",
 	}
 	cmd := exec.Command("git", args...)
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("%s", stderr.String())
 	}
-	return dir, nil
+	// FIXME: enforce scoping in the git checkout command instead
+	// of here.
+	d := path.Join(dir, db.scope)
+	fmt.Printf("--> %s\n", d)
+	return d, nil
 }
 
 // Checkout populates the directory at dir with the uncommitted
