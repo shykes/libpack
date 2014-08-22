@@ -17,12 +17,12 @@ func tmpdir(t *testing.T) string {
 	return dir
 }
 
-func TestInit(t *testing.T) {
+func TestGitInit(t *testing.T) {
 	var err error
 	// Init existing dir
 	tmp1 := tmpdir(t)
 	defer os.RemoveAll(tmp1)
-	_, err = Init(tmp1, "refs/heads/test", "")
+	_, err = GitInit(tmp1, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestInit(t *testing.T) {
 
 	// Init a non-existing dir
 	tmp2 := path.Join(tmp1, "new")
-	_, err = Init(tmp2, "refs/heads/test", "")
+	_, err = GitInit(tmp2, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestInit(t *testing.T) {
 	}
 
 	// Init an already-initialized dir
-	_, err = Init(tmp2, "refs/heads/test", "")
+	_, err = GitInit(tmp2, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestInit(t *testing.T) {
 func TestSetEmpty(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestSetEmpty(t *testing.T) {
 func TestList(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestList(t *testing.T) {
 func TestSetGetSimple(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestSetGetSimple(t *testing.T) {
 func TestSetGetMultiple(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestSetGetMultiple(t *testing.T) {
 func TestSetCommitGet(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestSetCommitGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Free()
-	db, err = Init(tmp, "refs/heads/test", "")
+	db, err = GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestSetCommitGet(t *testing.T) {
 func TestSetGetNested(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]st
 		for _, scope := range scopes {
 			tmp := tmpdir(t)
 			defer os.RemoveAll(tmp)
-			db, err := Init(tmp, ref, scope)
+			db, err := GitInit(tmp, ref, scope)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -261,7 +261,7 @@ func TestSetGetNestedMultipleScoped(t *testing.T) {
 func TestMkdir(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestMkdir(t *testing.T) {
 func TestCheckout(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestCheckout(t *testing.T) {
 func TestCheckoutTmp(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestCheckoutUncommitted(t *testing.T) {
 	t.Skip("FIXME: DB.CheckoutUncommitted does not work properly at the moment")
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := GitInit(tmp, "refs/heads/test", "")
 	if err != nil {
 		t.Fatal(err)
 	}

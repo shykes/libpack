@@ -20,7 +20,7 @@ const (
 
 // GetTar generates a tar stream frmo the contents of db, and streams
 // it to `dst`.
-func (db *DB) GetTar(dst io.Writer) error {
+func GetTar(db DB, dst io.Writer) error {
 	tw := tar.NewWriter(dst)
 	defer tw.Close()
 	// Walk the data tree
@@ -53,7 +53,7 @@ func (db *DB) GetTar(dst io.Writer) error {
 // SetTar adds data to db from a tar strema decoded from `src`.
 // Raw data is stored at the key `_fs_data/', and metadata in a
 // separate key '_fs_metadata'.
-func (db *DB) SetTar(src io.Reader) error {
+func SetTar(db DB, src io.Reader) error {
 	tr := tar.NewReader(src)
 	for {
 		hdr, err := tr.Next()
@@ -69,13 +69,13 @@ func (db *DB) SetTar(src io.Reader) error {
 			return err
 		}
 		fmt.Printf("    ---> storing metadata in %s\n", metaPath(hdr.Name))
-		if err := db.SetStream(metaPath(hdr.Name), metaBlob); err != nil {
+		if err := SetStream(db, metaPath(hdr.Name), metaBlob); err != nil {
 			return err
 		}
 		// FIXME: git can carry symlinks as well
 		if hdr.Typeflag == tar.TypeReg {
 			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
-			if err := db.SetStream(path.Join("_fs_data", hdr.Name), tr); err != nil {
+			if err := SetStream(db, path.Join("_fs_data", hdr.Name), tr); err != nil {
 				return err
 			}
 		}

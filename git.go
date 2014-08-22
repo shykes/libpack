@@ -1,0 +1,525 @@
+package libpack
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"path"
+	"strings"
+	"time"
+
+	git "github.com/libgit2/git2go"
+)
+
+// DB is a simple git-backed database.
+type GitBranch struct {
+	repo   *git.Repository
+	commit *git.Commit
+	ref    string
+	scope  string
+	tree   *git.Tree
+	parent *GitBranch
+}
+
+func (br *GitBranch) Scope(scope string) DB {
+	// FIXME: do we risk duplicate br.repo.Free()?
+	return &GitBranch{
+		repo:   br.repo,
+		commit: br.commit,
+		ref:    br.ref,
+		scope:  scope, // If parent!=nil, scope is relative to parent
+		tree:   br.tree,
+		parent: br,
+	}
+}
+
+// Init initializes a new git-backed database from the following
+// elements:
+// * A bare git repository at `repo`
+// * A git reference name `ref` (for example "refs/heads/foo")
+// * An optional scope to expose only a subset of the git tree (for example "/myapp/v1")
+func GitInit(repo, ref, scope string) (*GitBranch, error) {
+	r, err := git.InitRepository(repo, true)
+	if err != nil {
+		return nil, err
+	}
+	br, err := newRepo(r, ref, scope)
+	if err != nil {
+		return nil, err
+	}
+	return br, nil
+}
+
+func GitOpen(repo, ref, scope string) (*GitBranch, error) {
+	r, err := git.OpenRepository(repo)
+	if err != nil {
+		return nil, err
+	}
+	br, err := newRepo(r, ref, scope)
+	if err != nil {
+		return nil, err
+	}
+	return br, nil
+}
+
+func newRepo(repo *git.Repository, ref, scope string) (*GitBranch, error) {
+	br := &GitBranch{
+		repo:  repo,
+		ref:   ref,
+		scope: scope,
+	}
+	if err := br.Update(); err != nil {
+		br.Free()
+		return nil, err
+	}
+	return br, nil
+}
+
+// Free must be called to release resources when a database is no longer
+// in use.
+// This is required in addition to Golang garbage collection, because
+// of the libgit2 C bindings.
+func (br *GitBranch) Free() {
+	br.repo.Free()
+	if br.commit != nil {
+		br.commit.Free()
+	}
+}
+
+// Head returns the id of the latest commit
+func (br *GitBranch) Head() *git.Oid {
+	if br.commit != nil {
+		return br.commit.Id()
+	}
+	return nil
+}
+
+func (br *GitBranch) Latest() *git.Oid {
+	if br.tree != nil {
+		return br.tree.Id()
+	}
+	return nil
+}
+
+func (br *GitBranch) Repo() *git.Repository {
+	return br.repo
+}
+
+func (br *GitBranch) Dump(dst io.Writer) error {
+	return br.Walk("/", func(key string, obj git.Object) error {
+		if _, isTree := obj.(*git.Tree); isTree {
+			fmt.Fprintf(dst, "%s/\n", key)
+		} else if blob, isBlob := obj.(*git.Blob); isBlob {
+			fmt.Fprintf(dst, "%s = %s\n", key, blob.Contents())
+		}
+		return nil
+	})
+}
+
+func (br *GitBranch) Walk(key string, h func(string, git.Object) error) error {
+	if br.tree == nil {
+		return fmt.Errorf("no tree to walk")
+	}
+	subtree, err := lookupSubtree(br.repo, br.tree, key)
+	if err != nil {
+		return err
+	}
+	var handlerErr error
+	err = subtree.Walk(func(parent string, e *git.TreeEntry) int {
+		obj, err := br.repo.Lookup(e.Id)
+		if err != nil {
+			handlerErr = err
+			return -1
+		}
+		if err := h(path.Join(parent, e.Name), obj); err != nil {
+			handlerErr = err
+			return -1
+		}
+		obj.Free()
+		return 0
+	})
+	if handlerErr != nil {
+		return handlerErr
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Update looks up the value of the database's reference, and changes
+// the memory representation accordingly.
+// Uncommitted changes are left untouched (ie they are not merged
+// or rebased).
+func (br *GitBranch) Update() error {
+	tip, err := br.repo.LookupReference(br.ref)
+	if err != nil {
+		br.commit = nil
+		return nil
+	}
+	commit, err := br.lookupCommit(tip.Target())
+	if err != nil {
+		return err
+	}
+	if br.commit != nil {
+		br.commit.Free()
+	}
+	br.commit = commit
+	if br.tree == nil {
+		tree, err := br.commit.Tree()
+		if err != nil {
+			return err
+		}
+		br.tree = tree
+	}
+	return nil
+}
+
+// Mkdir adds an empty subtree at key if it doesn't exist.
+func (br *GitBranch) Mkdir(key string) error {
+	if br.parent != nil {
+		return br.parent.Mkdir(path.Join(br.scope, key))
+	}
+	empty, err := emptyTree(br.repo)
+	if err != nil {
+		return fmt.Errorf("emptyTree: %v", err)
+	}
+	newTree, err := TreeUpdate(br.repo, br.tree, path.Join(br.scope, key), empty)
+	if err != nil {
+		return fmt.Errorf("TreeUpdate: %v", err)
+	}
+	br.tree = newTree
+	return nil
+}
+
+// Get returns the value of the Git blob at path `key`.
+// If there is no blob at the specified key, an error
+// is returned.
+func (br *GitBranch) Get(key string) (string, error) {
+	if br.tree == nil {
+		return "", os.ErrNotExist
+	}
+	e, err := br.tree.EntryByPath(path.Join(br.scope, key))
+	if err != nil {
+		return "", err
+	}
+	blob, err := br.lookupBlob(e.Id)
+	if err != nil {
+		return "", err
+	}
+	defer blob.Free()
+	return string(blob.Contents()), nil
+}
+
+// Set writes the specified value in a Git blob, and updates the
+// uncommitted tree to point to that blob as `key`.
+func (br *GitBranch) Set(key, value string) error {
+	if br.parent != nil {
+		return br.parent.Set(path.Join(br.scope, key), value)
+	}
+	var (
+		id  *git.Oid
+		err error
+	)
+	// FIXME: libgit2 crashes if value is empty.
+	// Work around this by shelling out to git.
+	if value == "" {
+		out, err := exec.Command("git", "--git-dir", br.repo.Path(), "hash-object", "-w", "--stdin").Output()
+		if err != nil {
+			return fmt.Errorf("git hash-object: %v", err)
+		}
+		id, err = git.NewOid(strings.Trim(string(out), " \t\r\n"))
+		if err != nil {
+			return fmt.Errorf("git newoid %v", err)
+		}
+	} else {
+		id, err = br.repo.CreateBlobFromBuffer([]byte(value))
+		if err != nil {
+			return err
+		}
+	}
+	// note: br.tree might be nil if this is the first entry
+	newTree, err := TreeUpdate(br.repo, br.tree, path.Join(br.scope, key), id)
+	if err != nil {
+		return fmt.Errorf("treeupdate: %v", err)
+	}
+	br.tree = newTree
+	return nil
+}
+
+// SetStream writes the data from `src` to a new Git blob,
+// and updates the uncommitted tree to point to that blob as `key`.
+func SetStream(db DB, key string, src io.Reader) error {
+	// FIXME: instead of buffering the entire value, use
+	// libgit2 CreateBlobFromChunks to stream the data straight
+	// into git.
+	buf := new(bytes.Buffer)
+	_, err := io.Copy(buf, src)
+	if err != nil {
+		return err
+	}
+	return db.Set(key, buf.String())
+}
+
+func TreePath(p string) string {
+	p = path.Clean(p)
+	if p == "/" || p == "." {
+		return "/"
+	}
+	// Remove leading / from the path
+	// as libgit2.TreeEntryByPath does not accept it
+	p = strings.TrimLeft(p, "/")
+	return p
+}
+
+// List returns a list of object names at the subtree `key`.
+// If there is no subtree at `key`, an error is returned.
+func (br *GitBranch) List(key string) ([]string, error) {
+	if br.tree == nil {
+		return []string{}, nil
+	}
+	subtree, err := lookupSubtree(br.repo, br.tree, path.Join(br.scope, key))
+	if err != nil {
+		return nil, err
+	}
+	defer subtree.Free()
+	var (
+		i     uint64
+		count uint64 = subtree.EntryCount()
+	)
+	entries := make([]string, 0, count)
+	for i = 0; i < count; i++ {
+		entries = append(entries, subtree.EntryByIndex(i).Name)
+	}
+	return entries, nil
+}
+
+// Commit atomically stores all database changes since the last commit
+// into a new Git commit object, and updates the database's reference
+// to point to that commit.
+func (br *GitBranch) Commit(msg string) error {
+	if br.parent != nil {
+		return br.parent.Commit(msg)
+	}
+	if br.tree == nil {
+		return fmt.Errorf("nothing to commit")
+	}
+	// FIXME: the ref might have been changed by another
+	// process. We must implement either 1) reliable locking
+	// or 2) a solid merge resolution strategy.
+	// For now we simply assume the ref has not changed.
+	var parents []*git.Commit
+	if br.commit != nil {
+		commitTree, err := br.commit.Tree()
+		if err != nil {
+			return err
+		}
+		if commitTree.Id().Equal(br.tree.Id()) {
+			return fmt.Errorf("nothing to commit")
+		}
+		parents = append(parents, br.commit)
+	}
+	commitId, err := br.repo.CreateCommit(
+		br.ref,
+		&git.Signature{"libpack", "libpack", time.Now()}, // author
+		&git.Signature{"libpack", "libpack", time.Now()}, // committer
+		msg,
+		br.tree,    // git tree to commit
+		parents..., // parent commit (0 or 1)
+	)
+	if err != nil {
+		return err
+	}
+	commit, err := br.lookupCommit(commitId)
+	if err != nil {
+		return err
+	}
+	if br.commit != nil {
+		br.commit.Free()
+	}
+	br.commit = commit
+	return nil
+}
+
+// Checkout populates the directory at dir with the committed
+// contents of br. Uncommitted changes are ignored.
+//
+// As a convenience, if dir is an empty string, a temporary directory
+// is created and returned, and the caller is responsible for removing it.
+//
+func (br *GitBranch) Checkout(dir string) (checkoutDir string, err error) {
+	if br.parent != nil {
+		return br.parent.Checkout(path.Join(br.scope, dir))
+	}
+	head := br.Head()
+	if head == nil {
+		return "", fmt.Errorf("no head to checkout")
+	}
+	if dir == "" {
+		dir, err = ioutil.TempDir("", "libpack-checkout-")
+		if err != nil {
+			return "", err
+		}
+		defer func() {
+			if err != nil {
+				os.RemoveAll(dir)
+			}
+		}()
+	}
+	stderr := new(bytes.Buffer)
+	args := []string{
+		"--git-dir", br.repo.Path(), "--work-tree", dir,
+		"checkout", head.String(), ".",
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("%s", stderr.String())
+	}
+	// FIXME: enforce scoping in the git checkout command instead
+	// of here.
+	d := path.Join(dir, br.scope)
+	fmt.Printf("--> %s\n", d)
+	return d, nil
+}
+
+// Checkout populates the directory at dir with the uncommitted
+// contents of br.
+// FIXME: this does not work properly at the moment.
+func (br *GitBranch) CheckoutUncommitted(dir string) error {
+	if br.tree == nil {
+		return fmt.Errorf("no tree")
+	}
+	tree, err := lookupSubtree(br.repo, br.tree, br.scope)
+	if err != nil {
+		return err
+	}
+	// If the tree is empty, checkout will fail and there is
+	// nothing to do anyway
+	if tree.EntryCount() == 0 {
+		return nil
+	}
+	idx, err := ioutil.TempFile("", "libpack-index")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(idx.Name())
+	readTree := exec.Command(
+		"git",
+		"--git-dir", br.repo.Path(),
+		"--work-tree", dir,
+		"read-tree", tree.Id().String(),
+	)
+	readTree.Env = append(readTree.Env, "GIT_INDEX_FILE="+idx.Name())
+	stderr := new(bytes.Buffer)
+	readTree.Stderr = stderr
+	if err := readTree.Run(); err != nil {
+		return fmt.Errorf("%s", stderr.String())
+	}
+	checkoutIndex := exec.Command(
+		"git",
+		"--git-dir", br.repo.Path(),
+		"--work-tree", dir,
+		"checkout-index",
+	)
+	checkoutIndex.Env = append(checkoutIndex.Env, "GIT_INDEX_FILE="+idx.Name())
+	stderr = new(bytes.Buffer)
+	checkoutIndex.Stderr = stderr
+	if err := checkoutIndex.Run(); err != nil {
+		return fmt.Errorf("%s", stderr.String())
+	}
+	return nil
+}
+
+// ExecInCheckout checks out the committed contents of the database into a
+// temporary directory, executes the specified command in a new subprocess
+// with that directory as the working directory, then removes the directory.
+//
+// The standard input, output and error streams of the command are the same
+// as the current process's.
+func (br *GitBranch) ExecInCheckout(path string, args ...string) error {
+	checkout, err := br.Checkout("")
+	if err != nil {
+		return fmt.Errorf("checkout: %v", err)
+	}
+	defer os.RemoveAll(checkout)
+	cmd := exec.Command(path, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = checkout
+	return cmd.Run()
+}
+
+// lookupBlob looks up an object at hash `id` in `repo`, and returns
+// it as a git blob. If the object is not a blob, an error is returned.
+func (br *GitBranch) lookupBlob(id *git.Oid) (*git.Blob, error) {
+	obj, err := br.repo.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	if blob, ok := obj.(*git.Blob); ok {
+		return blob, nil
+	}
+	return nil, fmt.Errorf("hash %v exist but is not a blob", id)
+}
+
+// lookupTree looks up an object at hash `id` in `repo`, and returns
+// it as a git tree. If the object is not a tree, an error is returned.
+func (br *GitBranch) lookupTree(id *git.Oid) (*git.Tree, error) {
+	return lookupTree(br.repo, id)
+}
+
+func lookupTree(r *git.Repository, id *git.Oid) (*git.Tree, error) {
+	obj, err := r.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	if tree, ok := obj.(*git.Tree); ok {
+		return tree, nil
+	}
+	return nil, fmt.Errorf("hash %v exist but is not a tree", id)
+}
+
+// lookupCommit looks up an object at hash `id` in `repo`, and returns
+// it as a git commit. If the object is not a commit, an error is returned.
+func (br *GitBranch) lookupCommit(id *git.Oid) (*git.Commit, error) {
+	obj, err := br.repo.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	if commit, ok := obj.(*git.Commit); ok {
+		return commit, nil
+	}
+	return nil, fmt.Errorf("hash %v exist but is not a commit", id)
+}
+
+func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
+	if tree == nil {
+		return nil, fmt.Errorf("tree undefined")
+	}
+	name = TreePath(name)
+	if name == "/" {
+		// Allocate a new Tree object so that the caller
+		// can always call Free() on the result
+		return lookupTree(repo, tree.Id())
+	}
+	entry, err := tree.EntryByPath(name)
+	if err != nil {
+		return nil, err
+	}
+	return lookupTree(repo, entry.Id)
+}
+
+// emptyTree creates an empty Git tree and returns its ID
+// (the ID will always be the same)
+func emptyTree(repo *git.Repository) (*git.Oid, error) {
+	builder, err := repo.TreeBuilder()
+	if err != nil {
+		return nil, err
+	}
+	return builder.Write()
+}
