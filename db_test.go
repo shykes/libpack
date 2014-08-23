@@ -22,26 +22,37 @@ func tmpdir(t *testing.T) string {
 	return dir
 }
 
+func tmpDB(t *testing.T, ref string) *DB {
+	if ref == "" {
+		ref = "refs/heads/test"
+	}
+	tmp := tmpdir(t)
+	db, err := Init(tmp, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func nukeDB(db *DB) {
+	dir := db.Repo().Path()
+	os.RemoveAll(dir)
+}
+
 // Pull on a non-empty destination (ref set and uncommitted changes are present)
 func TestPullToUncommitted(t *testing.T) {
-	tmp1 := tmpdir(t)
-	db1, err := Init(tmp1, "refs/heads/test1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db1 := tmpDB(t, "refs/heads/test1")
+	defer nukeDB(db1)
 
-	tmp2 := tmpdir(t)
-	db2, err := Init(tmp2, "refs/heads/test-foo-bar")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db2 := tmpDB(t, "")
+	defer nukeDB(db2)
 
 	db1.Set("foo/bar/baz", "hello world")
 	db1.Mkdir("/etc/something")
 	db1.Commit("just creating some stuff")
 
 	db2.Set("uncommitted-key", "uncommitted value")
-	if err := db2.Pull(tmp1, "refs/heads/test1"); err != nil {
+	if err := db2.Pull(db1.Repo().Path(), "refs/heads/test1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,12 +93,8 @@ func TestInit(t *testing.T) {
 }
 
 func TestScopeNoop(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	root, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := tmpDB(t, "")
+	defer nukeDB(root)
 	root.Set("foo/bar", "hello")
 	for _, s := range nopScopes {
 		scoped := root.Scope(s)
@@ -96,12 +103,8 @@ func TestScopeNoop(t *testing.T) {
 }
 
 func TestScopeSetGet(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	root, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := tmpDB(t, "")
+	defer nukeDB(root)
 	scoped := root.Scope("foo/bar")
 	scoped.Set("hello", "world")
 	assertGet(t, scoped, "hello", "world")
@@ -133,24 +136,16 @@ func assertNotExist(t *testing.T, db *DB, key string) {
 }
 
 func TestSetEmpty(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("foo", ""); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestList(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	db.Set("foo", "bar")
 	if db.tree == nil {
 		t.Fatalf("%#v\n")
@@ -181,12 +176,8 @@ func TestList(t *testing.T) {
 }
 
 func TestSetGetSimple(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("foo", "bar"); err != nil {
 		t.Fatal(err)
 	}
@@ -198,12 +189,8 @@ func TestSetGetSimple(t *testing.T) {
 }
 
 func TestSetGetMultiple(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("foo", "bar"); err != nil {
 		t.Fatal(err)
 	}
@@ -223,12 +210,8 @@ func TestSetGetMultiple(t *testing.T) {
 }
 
 func TestSetCommitGet(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("foo", "bar"); err != nil {
 		t.Fatal(err)
 	}
@@ -241,8 +224,8 @@ func TestSetCommitGet(t *testing.T) {
 	if err := db.Set("ga", "added after commit"); err != nil {
 		t.Fatal(err)
 	}
-	db.Free()
-	db, err = Init(tmp, "refs/heads/test")
+	var err error
+	db, err = Init(db.Repo().Path(), "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,12 +242,8 @@ func TestSetCommitGet(t *testing.T) {
 }
 
 func TestSetGetNested(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("a/b/c/d/hello", "world"); err != nil {
 		t.Fatal(err)
 	}
@@ -277,12 +256,8 @@ func TestSetGetNested(t *testing.T) {
 
 func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]string) {
 	for _, ref := range refs {
-		tmp := tmpdir(t)
-		defer os.RemoveAll(tmp)
-		rootdb, err := Init(tmp, ref)
-		if err != nil {
-			t.Fatal(err)
-		}
+		rootdb := tmpDB(t, ref)
+		defer nukeDB(rootdb)
 		for _, scope := range scopes {
 			db := rootdb.Scope(scope)
 			if len(components) == 0 {
@@ -341,12 +316,8 @@ func TestSetGetNestedMultipleScoped(t *testing.T) {
 }
 
 func TestMkdir(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Mkdir("/"); err != nil {
 		t.Fatal(err)
 	}
@@ -362,12 +333,8 @@ func TestMkdir(t *testing.T) {
 }
 
 func TestCheckout(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("foo/bar/baz", "hello world"); err != nil {
 		t.Fatal(err)
 	}
@@ -393,12 +360,8 @@ func TestCheckout(t *testing.T) {
 }
 
 func TestCheckoutTmp(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("foo/bar/baz", "hello world"); err != nil {
 		t.Fatal(err)
 	}
@@ -425,12 +388,8 @@ func TestCheckoutTmp(t *testing.T) {
 
 func TestCheckoutUncommitted(t *testing.T) {
 	t.Skip("FIXME: DB.CheckoutUncommitted does not work properly at the moment")
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	if err := db.Set("foo/bar/baz", "hello world"); err != nil {
 		t.Fatal(err)
 	}
@@ -456,23 +415,17 @@ func TestCheckoutUncommitted(t *testing.T) {
 
 // Pull on an empty destination (ref not set)
 func TestPullToEmpty(t *testing.T) {
-	tmp1 := tmpdir(t)
-	db1, err := Init(tmp1, "refs/heads/test1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db1 := tmpDB(t, "refs/heads/test1")
+	defer nukeDB(db1)
 
-	tmp2 := tmpdir(t)
-	db2, err := Init(tmp2, "refs/heads/test-foo-bar")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db2 := tmpDB(t, "refs/heads/test-foo-bar")
+	defer nukeDB(db2)
 
 	db1.Set("foo/bar/baz", "hello world")
 	db1.Mkdir("/etc/something")
 	db1.Commit("just creating some stuff")
 
-	if err := db2.Pull(tmp1, "refs/heads/test1"); err != nil {
+	if err := db2.Pull(db1.Repo().Path(), "refs/heads/test1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -481,12 +434,8 @@ func TestPullToEmpty(t *testing.T) {
 
 // Test Update when the ref has not changed
 func TestUpdate(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := tmpDB(t, "")
+	defer nukeDB(db)
 	db.Set("key", "value")
 	if err := db.Update(); err != nil {
 		t.Fatal(err)
@@ -504,13 +453,9 @@ func TestUpdate(t *testing.T) {
 
 // Test Update when the ref has changed out of band
 func TestUpdateWithChanges(t *testing.T) {
-	tmp := tmpdir(t)
-	defer os.RemoveAll(tmp)
-	db1, err := Init(tmp, "refs/heads/test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db2, err := Init(tmp, "refs/heads/test")
+	db1 := tmpDB(t, "refs/heads/test")
+	defer nukeDB(db1)
+	db2, err := Open(db1.Repo().Path(), "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
