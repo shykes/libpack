@@ -41,35 +41,34 @@ func (db *DB) Scope(scope string) *DB {
 // * A bare git repository at `repo`
 // * A git reference name `ref` (for example "refs/heads/foo")
 // * An optional scope to expose only a subset of the git tree (for example "/myapp/v1")
-func Init(repo, ref, scope string) (*DB, error) {
+func Init(repo, ref string) (*DB, error) {
 	r, err := git.InitRepository(repo, true)
 	if err != nil {
 		return nil, err
 	}
-	db, err := newRepo(r, ref, scope)
+	db, err := newRepo(r, ref)
 	if err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-func Open(repo, ref, scope string) (*DB, error) {
+func Open(repo, ref string) (*DB, error) {
 	r, err := git.OpenRepository(repo)
 	if err != nil {
 		return nil, err
 	}
-	db, err := newRepo(r, ref, scope)
+	db, err := newRepo(r, ref)
 	if err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-func newRepo(repo *git.Repository, ref, scope string) (*DB, error) {
+func newRepo(repo *git.Repository, ref string) (*DB, error) {
 	db := &DB{
-		repo:  repo,
-		ref:   ref,
-		scope: scope,
+		repo: repo,
+		ref:  ref,
 	}
 	if err := db.Update(); err != nil {
 		db.Free()
@@ -199,9 +198,13 @@ func (db *DB) Mkdir(key string) error {
 // If there is no blob at the specified key, an error
 // is returned.
 func (db *DB) Get(key string) (string, error) {
+	if db.parent != nil {
+		return db.parent.Get(path.Join(db.scope, key))
+	}
 	if db.tree == nil {
 		return "", os.ErrNotExist
 	}
+	key = TreePath(key)
 	e, err := db.tree.EntryByPath(path.Join(db.scope, key))
 	if err != nil {
 		return "", err

@@ -9,6 +9,11 @@ import (
 	"testing"
 )
 
+var (
+	// Scope values which should not actually change the scope
+	nopScopes = []string{"", "/", "."}
+)
+
 func tmpdir(t *testing.T) string {
 	dir, err := ioutil.TempDir("", "test-")
 	if err != nil {
@@ -22,7 +27,7 @@ func TestInit(t *testing.T) {
 	// Init existing dir
 	tmp1 := tmpdir(t)
 	defer os.RemoveAll(tmp1)
-	_, err = Init(tmp1, "refs/heads/test", "")
+	_, err = Init(tmp1, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +38,7 @@ func TestInit(t *testing.T) {
 
 	// Init a non-existing dir
 	tmp2 := path.Join(tmp1, "new")
-	_, err = Init(tmp2, "refs/heads/test", "")
+	_, err = Init(tmp2, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,16 +48,38 @@ func TestInit(t *testing.T) {
 	}
 
 	// Init an already-initialized dir
-	_, err = Init(tmp2, "refs/heads/test", "")
+	_, err = Init(tmp2, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestScopeNoop(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	root, err := Init(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root.Set("foo/bar", "hello")
+	for _, s := range nopScopes {
+		scoped := root.Scope(s)
+		assertGet(t, scoped, "foo/bar", "hello")
+	}
+}
+
+func assertGet(t *testing.T, db *DB, key, val string) {
+	if v, err := db.Get(key); err != nil {
+		t.Fatalf("assert %v=%v db:%#v\n=> %v", key, val, db, err)
+	} else if v != val {
+		t.Fatalf("assert %v=%v db:%#v\n=> %v=%v", key, val, db, key, v)
 	}
 }
 
 func TestSetEmpty(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +91,7 @@ func TestSetEmpty(t *testing.T) {
 func TestList(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +127,7 @@ func TestList(t *testing.T) {
 func TestSetGetSimple(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +144,7 @@ func TestSetGetSimple(t *testing.T) {
 func TestSetGetMultiple(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +169,7 @@ func TestSetGetMultiple(t *testing.T) {
 func TestSetCommitGet(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +186,7 @@ func TestSetCommitGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Free()
-	db, err = Init(tmp, "refs/heads/test", "")
+	db, err = Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +205,7 @@ func TestSetCommitGet(t *testing.T) {
 func TestSetGetNested(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,15 +220,15 @@ func TestSetGetNested(t *testing.T) {
 }
 
 func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]string) {
-	fmt.Printf("testSetGet refs=%v scopes=%v components=%v\n", refs, scopes, components)
 	for _, ref := range refs {
+		tmp := tmpdir(t)
+		defer os.RemoveAll(tmp)
+		rootdb, err := Init(tmp, ref)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, scope := range scopes {
-			tmp := tmpdir(t)
-			defer os.RemoveAll(tmp)
-			db, err := Init(tmp, ref, scope)
-			if err != nil {
-				t.Fatal(err)
-			}
+			db := rootdb.Scope(scope)
 			if len(components) == 0 {
 				return
 			}
@@ -213,9 +240,8 @@ func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]st
 				}
 				for _, k := range components[0] {
 					if v, err := db.Get(k); err != nil {
-						t.Fatal(err)
+						t.Fatalf("Get('%s'): %v\n\troot=%#v\n\tscoped=%#v", k, err, rootdb, db)
 					} else if v != "hello world" {
-						db.Dump(os.Stderr)
 						t.Fatal(err)
 					}
 				}
@@ -261,7 +287,7 @@ func TestSetGetNestedMultipleScoped(t *testing.T) {
 func TestMkdir(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +308,7 @@ func TestMkdir(t *testing.T) {
 func TestCheckout(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +339,7 @@ func TestCheckout(t *testing.T) {
 func TestCheckoutTmp(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +371,7 @@ func TestCheckoutUncommitted(t *testing.T) {
 	t.Skip("FIXME: DB.CheckoutUncommitted does not work properly at the moment")
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
-	db, err := Init(tmp, "refs/heads/test", "")
+	db, err := Init(tmp, "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
