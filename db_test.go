@@ -483,3 +483,28 @@ func TestUpdateWithChanges(t *testing.T) {
 	assertGet(t, db1, "key1", "val1")
 	assertGet(t, db1, "key2", "val2")
 }
+
+func TestAdd(t *testing.T) {
+	db1 := tmpDB(t, "refs/heads/db1")
+	defer nukeDB(db1)
+
+	db2, err := Open(db1.Repo().Path(), "refs/heads/db2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nukeDB(db2)
+
+	db1.Set("hello", "world")
+	db1.Set("foo/bar/baz", "hello there")
+
+	db2.Set("k", "v")
+	db2.Set("db1/foo/bar/abc", "xyz")
+	if err := db2.Add("db1", db1); err != nil {
+		t.Fatal(err)
+	}
+	assertGet(t, db2, "db1/hello", "world")
+	assertGet(t, db2, "k", "v")
+	assertGet(t, db2, "db1/foo/bar/baz", "hello there")
+	assertGet(t, db2, "db1/foo/bar/abc", "xyz")
+	assertGet(t, db2, "db1/foo/bar/abc", "xyz")
+}
