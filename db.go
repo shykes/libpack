@@ -508,6 +508,17 @@ func lookupTree(r *git.Repository, id *git.Oid) (*git.Tree, error) {
 	return nil, fmt.Errorf("hash %v exist but is not a tree", id)
 }
 
+func lookupBlob(r *git.Repository, id *git.Oid) (*git.Blob, error) {
+	obj, err := r.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	if blob, ok := obj.(*git.Blob); ok {
+		return blob, nil
+	}
+	return nil, fmt.Errorf("hash %v exist but is not a blob", id)
+}
+
 // lookupCommit looks up an object at hash `id` in `repo`, and returns
 // it as a git commit. If the object is not a commit, an error is returned.
 func (db *DB) lookupCommit(id *git.Oid) (*git.Commit, error) {
