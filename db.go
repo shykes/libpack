@@ -118,21 +118,25 @@ func (db *DB) Dump(dst io.Writer) error {
 	})
 }
 
-// Add copies the contents of src into db at prefix key.
+// AddDB copies the contents of src into db at prefix key.
 // The resulting content is the union of the new tree and
 // the pre-existing tree, if any.
 // In case of a conflict, the content of the new tree wins.
 // Conflicts are resolved at the file granularity (content is
 // never merged).
-func (db *DB) Add(key string, src *DB) error {
+func (db *DB) AddDB(key string, src *DB) error {
 	// No tree to add, nothing to do
 	if src.tree == nil {
 		return nil
 	}
+	return db.Add(key, src.tree.Id())
+}
+
+func (db *DB) Add(key string, id *git.Oid) error {
 	if db.parent != nil {
-		return db.parent.Add(path.Join(db.scope, key), src)
+		return db.parent.Add(path.Join(db.scope, key), id)
 	}
-	newTree, err := TreeUpdate(db.repo, db.tree, key, src.tree.Id())
+	newTree, err := TreeUpdate(db.repo, db.tree, key, id)
 	if err != nil {
 		return err
 	}

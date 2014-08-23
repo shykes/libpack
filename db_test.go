@@ -504,7 +504,7 @@ func TestUpdateWithChanges(t *testing.T) {
 	assertGet(t, db1, "key2", "val2")
 }
 
-func TestAdd(t *testing.T) {
+func TestAddDB(t *testing.T) {
 	db1 := tmpDB(t, "refs/heads/db1")
 	defer nukeDB(db1)
 
@@ -519,7 +519,7 @@ func TestAdd(t *testing.T) {
 
 	db2.Set("k", "v")
 	db2.Set("db1/foo/bar/abc", "xyz")
-	if err := db2.Add("db1", db1); err != nil {
+	if err := db2.AddDB("db1", db1); err != nil {
 		t.Fatal(err)
 	}
 	assertGet(t, db2, "db1/hello", "world")
