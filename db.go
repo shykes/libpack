@@ -151,12 +151,15 @@ func (db *DB) Walk(key string, h func(string, git.Object) error) error {
 
 // Update looks up the value of the database's reference, and changes
 // the memory representation accordingly.
-// Uncommitted changes are left untouched (ie they are not merged
-// or rebased).
+// If the committed tree is changed, then uncommitted changes are lost.
 func (db *DB) Update() error {
 	tip, err := db.repo.LookupReference(db.ref)
 	if err != nil {
 		db.commit = nil
+		return nil
+	}
+	// If we already have the latest commit, don't do anything
+	if db.commit != nil && db.commit.Id().Equal(tip.Target()) {
 		return nil
 	}
 	commit, err := db.lookupCommit(tip.Target())
@@ -167,12 +170,13 @@ func (db *DB) Update() error {
 		db.commit.Free()
 	}
 	db.commit = commit
-	if db.tree == nil {
-		tree, err := db.commit.Tree()
-		if err != nil {
-			return err
-		}
-		db.tree = tree
+	if db.tree != nil {
+		db.tree.Free()
+	}
+	if commitTree, err := commit.Tree(); err != nil {
+		return err
+	} else {
+		db.tree = commitTree
 	}
 	return nil
 }

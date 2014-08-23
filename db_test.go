@@ -95,6 +95,16 @@ func assertGet(t *testing.T, db *DB, key, val string) {
 	}
 }
 
+// Assert that the specified key does not exist in db
+func assertNotExist(t *testing.T, db *DB, key string) {
+	if _, err := db.Get(key); err == nil {
+		fmt.Fprintf(os.Stderr, "--- db dump ---\n")
+		db.Dump(os.Stderr)
+		fmt.Fprintf(os.Stderr, "--- end db dump ---\n")
+		t.Fatalf("assert key %v doesn't exist db:%#v\n=> %v", key, db, err)
+	}
+}
+
 func TestSetEmpty(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
@@ -440,4 +450,64 @@ func TestPullToEmpty(t *testing.T) {
 	}
 
 	assertGet(t, db2, "foo/bar/baz", "hello world")
+}
+
+// Test Update when the ref has not changed
+func TestUpdate(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Set("key", "value")
+	if err := db.Update(); err != nil {
+		t.Fatal(err)
+	}
+	assertGet(t, db, "key", "value")
+
+	if err := db.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Update(); err != nil {
+		t.Fatal(err)
+	}
+	assertGet(t, db, "key", "value")
+}
+
+// Test Update when the ref has changed out of band
+func TestUpdateWithChanges(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db1, err := Init(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := Init(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db1.Set("key1", "val1")
+	if err := db1.Commit("commit 1"); err != nil {
+		t.Fatal(err)
+	}
+
+	db2.Set("something", "uncommitted change")
+	if err := db2.Update(); err != nil {
+		t.Fatal(err)
+	}
+	assertGet(t, db2, "key1", "val1")
+	assertNotExist(t, db2, "something")
+
+	db2.Set("key2", "val2")
+	if err := db2.Commit("commit 2"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db1.Update(); err != nil {
+		t.Fatal(err)
+	}
+	assertGet(t, db1, "key1", "val1")
+	assertGet(t, db1, "key2", "val2")
 }
