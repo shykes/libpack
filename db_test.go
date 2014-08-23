@@ -68,6 +68,19 @@ func TestScopeNoop(t *testing.T) {
 	}
 }
 
+func TestScopeSetGet(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	root, err := Init(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := root.Scope("foo/bar")
+	scoped.Set("hello", "world")
+	assertGet(t, scoped, "hello", "world")
+	assertGet(t, root, "foo/bar/hello", "world")
+}
+
 func assertGet(t *testing.T, db *DB, key, val string) {
 	if v, err := db.Get(key); err != nil {
 		t.Fatalf("assert %v=%v db:%#v\n=> %v", key, val, db, err)
