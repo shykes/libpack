@@ -22,6 +22,33 @@ func tmpdir(t *testing.T) string {
 	return dir
 }
 
+// Pull on a non-empty destination (ref set and uncommitted changes are present)
+func TestPullToUncommitted(t *testing.T) {
+	tmp1 := tmpdir(t)
+	db1, err := Init(tmp1, "refs/heads/test1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tmp2 := tmpdir(t)
+	db2, err := Init(tmp2, "refs/heads/test-foo-bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db1.Set("foo/bar/baz", "hello world")
+	db1.Mkdir("/etc/something")
+	db1.Commit("just creating some stuff")
+
+	db2.Set("uncommitted-key", "uncommitted value")
+	if err := db2.Pull(tmp1, "refs/heads/test1"); err != nil {
+		t.Fatal(err)
+	}
+
+	assertGet(t, db2, "foo/bar/baz", "hello world")
+	assertNotExist(t, db2, "uncommitted-key")
+}
+
 func TestInit(t *testing.T) {
 	var err error
 	// Init existing dir
