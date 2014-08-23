@@ -108,8 +108,8 @@ func (br *GitBranch) Repo() *git.Repository {
 	return br.repo
 }
 
-func (br *GitBranch) Dump(dst io.Writer) error {
-	return br.Walk("/", func(key string, obj git.Object) error {
+func Dump(db DB, dst io.Writer) error {
+	return db.Walk("/", func(key string, obj git.Object) error {
 		if _, isTree := obj.(*git.Tree); isTree {
 			fmt.Fprintf(dst, "%s/\n", key)
 		} else if blob, isBlob := obj.(*git.Blob); isBlob {
