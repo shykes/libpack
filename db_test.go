@@ -410,3 +410,28 @@ func TestCheckoutUncommitted(t *testing.T) {
 		t.Fatalf("%#v", data)
 	}
 }
+
+// Pull on an empty destination (ref not set)
+func TestPullToEmpty(t *testing.T) {
+	tmp1 := tmpdir(t)
+	db1, err := Init(tmp1, "refs/heads/test1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tmp2 := tmpdir(t)
+	db2, err := Init(tmp2, "refs/heads/test-foo-bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db1.Set("foo/bar/baz", "hello world")
+	db1.Mkdir("/etc/something")
+	db1.Commit("just creating some stuff")
+
+	if err := db2.Pull(tmp1, "refs/heads/test1"); err != nil {
+		t.Fatal(err)
+	}
+
+	assertGet(t, db2, "foo/bar/baz", "hello world")
+}

@@ -347,6 +347,27 @@ func (db *DB) Commit(msg string) error {
 	return nil
 }
 
+// Pull downloads objects at the specified url and remote ref name,
+// and updates the local ref of db.
+// The uncommitted tree is left unchanged (ie uncommitted changes are
+// not merged or rebased).
+func (db *DB) Pull(url, ref string) error {
+	if ref == "" {
+		ref = db.ref
+	}
+	refspec := fmt.Sprintf("%s:%s", ref, db.ref)
+	fmt.Printf("Creating anonymous remote url=%s refspec=%s\n", url, refspec)
+	remote, err := db.repo.CreateAnonymousRemote(url, refspec)
+	if err != nil {
+		return err
+	}
+	defer remote.Free()
+	if err := remote.Fetch(nil, fmt.Sprintf("libpack.pull %s %s", url, refspec)); err != nil {
+		return err
+	}
+	return db.Update()
+}
+
 // Checkout populates the directory at dir with the committed
 // contents of db. Uncommitted changes are ignored.
 //
