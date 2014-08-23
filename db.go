@@ -394,6 +394,34 @@ func (db *DB) Pull(url, ref string) error {
 	return db.Update()
 }
 
+// Push uploads the committed contents of the db at the specified url and
+// remote ref name. The remote ref is created if it doesn't exist.
+func (db *DB) Push(url, ref string) error {
+	if ref == "" {
+		ref = db.ref
+	}
+	// The '+' prefix sets force=true,
+	// so the remote ref is created if it doesn't exist.
+	refspec := fmt.Sprintf("+%s:%s", db.ref, ref)
+	remote, err := db.repo.CreateAnonymousRemote(url, refspec)
+	if err != nil {
+		return err
+	}
+	defer remote.Free()
+	push, err := remote.NewPush()
+	if err != nil {
+		return fmt.Errorf("git_push_new: %v", err)
+	}
+	defer push.Free()
+	if err := push.AddRefspec(refspec); err != nil {
+		return fmt.Errorf("git_push_refspec_add: %v", err)
+	}
+	if err := push.Finish(); err != nil {
+		return fmt.Errorf("git_push_finish: %v", err)
+	}
+	return nil
+}
+
 // Checkout populates the directory at dir with the committed
 // contents of db. Uncommitted changes are ignored.
 //

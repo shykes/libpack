@@ -60,6 +60,26 @@ func TestPullToUncommitted(t *testing.T) {
 	assertNotExist(t, db2, "uncommitted-key")
 }
 
+func TestPush(t *testing.T) {
+	src := tmpDB(t, "refs/heads/test")
+	defer nukeDB(src)
+	src.Set("foo/bar/baz", "hello world")
+	src.Commit("")
+
+	dst := tmpDB(t, "refs/heads/test")
+	defer nukeDB(dst)
+	dst.Set("committed-key", "this should go away")
+	dst.Commit("")
+
+	if err := src.Push(dst.Repo().Path(), "refs/heads/test"); err != nil {
+		t.Fatal(err)
+	}
+
+	dst2, _ := Open(dst.Repo().Path(), "refs/heads/test")
+	assertGet(t, dst2, "foo/bar/baz", "hello world")
+	assertNotExist(t, dst2, "committed-key")
+}
+
 func TestInit(t *testing.T) {
 	var err error
 	// Init existing dir
