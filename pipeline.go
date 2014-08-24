@@ -59,9 +59,12 @@ func (t *Pipeline) Set(key, value string) *Pipeline {
 
 // Add appends a new `add` instruction to a pipeline, and
 // returns the new combined pipeline.
-// `add` inserts the output of another pipeline in the input tree, at
-// the path `key`.
-func (t *Pipeline) Add(key string, val *Pipeline, merge bool) *Pipeline {
+// `add` inserts a git object in the input tree, at the pat 'key'.
+// The following types are supported for `val`:
+//  - git.Object: the specified object is added
+//  - *git.Oid: the object at the specified ID is added
+//  - *Pipeline: the specified pipeline is run, and the result is added
+func (t *Pipeline) Add(key string, val interface{}, merge bool) *Pipeline {
 	return t.setPrev(OpAdd, &addArg{
 		key:   key,
 		val:   val,
@@ -71,7 +74,7 @@ func (t *Pipeline) Add(key string, val *Pipeline, merge bool) *Pipeline {
 
 type addArg struct {
 	key   string
-	val   *Pipeline
+	val   interface{}
 	merge bool
 }
 
@@ -128,11 +131,30 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 			if !ok {
 				return nil, fmt.Errorf("add: invalid argument: %v", t.arg)
 			}
-			val, err := arg.val.Run()
-			if err != nil {
-				return nil, fmt.Errorf("add: run source: %v", err)
+			var id *git.Oid
+			switch val := arg.val.(type) {
+			case *Pipeline:
+				{
+					if out, err := val.Run(); err != nil {
+						return nil, fmt.Errorf("add: run source: %v", err)
+					} else {
+						id = out.Id()
+					}
+				}
+			case git.Object:
+				{
+					id = val.Id()
+				}
+			case *git.Oid:
+				{
+					id = val
+				}
+			default:
+				{
+					return nil, fmt.Errorf("invalid value: %v", val)
+				}
 			}
-			return TreeAdd(t.repo, in, arg.key, val.Id(), arg.merge)
+			return TreeAdd(t.repo, in, arg.key, id, arg.merge)
 		}
 	case OpMkdir:
 		{
