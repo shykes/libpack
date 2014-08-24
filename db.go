@@ -136,7 +136,7 @@ func (db *DB) Add(key string, id *git.Oid) error {
 	if db.parent != nil {
 		return db.parent.Add(path.Join(db.scope, key), id)
 	}
-	newTree, err := TreeUpdate(db.repo, db.tree, key, id)
+	newTree, err := TreeUpdate(db.repo, db.tree, key, id, true)
 	if err != nil {
 		return err
 	}
@@ -216,7 +216,7 @@ func (db *DB) Mkdir(key string) error {
 	if err != nil {
 		return fmt.Errorf("emptyTree: %v", err)
 	}
-	newTree, err := TreeUpdate(db.repo, db.tree, path.Join(db.scope, key), empty)
+	newTree, err := TreeUpdate(db.repo, db.tree, path.Join(db.scope, key), empty, true)
 	if err != nil {
 		return fmt.Errorf("TreeUpdate: %v", err)
 	}
@@ -275,7 +275,7 @@ func (db *DB) Set(key, value string) error {
 		}
 	}
 	// note: db.tree might be nil if this is the first entry
-	newTree, err := TreeUpdate(db.repo, db.tree, path.Join(db.scope, key), id)
+	newTree, err := TreeUpdate(db.repo, db.tree, path.Join(db.scope, key), id, true)
 	if err != nil {
 		return fmt.Errorf("treeupdate: %v", err)
 	}

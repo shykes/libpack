@@ -13,6 +13,10 @@ import (
 // If an object already exists at key or any intermediary path,
 // it is overwritten.
 //
+// - If merge is true, new trees are merged into existing ones at the
+// file granularity (similar to 'cp -R').
+// - If it is false, existing trees are completely shadowed (similar to 'mount')
+//
 // Since git trees are immutable, base is not modified. The new
 // tree is returned.
 // If an error is encountered, intermediary objects may be left
@@ -20,7 +24,7 @@ import (
 // to perform garbage collection, if any.
 // FIXME: manage garbage collection, or provide a list of created
 // objects.
-func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid) (t *git.Tree, err error) {
+func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid, merge bool) (t *git.Tree, err error) {
 	/*
 	** // Primitive but convenient tracing for debugging recursive calls to TreeUpdate.
 	** // Uncomment this block for debug output.
@@ -95,12 +99,12 @@ func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 			}
 		}
 		// If that subtree already exists, merge the new one in.
-		if oldSubTree != nil {
+		if merge && oldSubTree != nil {
 			subTree = oldSubTree
 			for i := uint64(0); i < oTree.EntryCount(); i++ {
 				var err error
 				e := oTree.EntryByIndex(i)
-				subTree, err = TreeUpdate(repo, subTree, e.Name, e.Id)
+				subTree, err = TreeUpdate(repo, subTree, e.Name, e.Id, merge)
 				if err != nil {
 					return nil, err
 				}
@@ -126,9 +130,9 @@ func TreeUpdate(repo *git.Repository, tree *git.Tree, key string, valueId *git.O
 		}
 		return newTree, nil
 	}
-	subtree, err := TreeUpdate(repo, nil, leaf, valueId)
+	subtree, err := TreeUpdate(repo, nil, leaf, valueId, merge)
 	if err != nil {
 		return nil, err
 	}
-	return TreeUpdate(repo, tree, base, subtree.Id())
+	return TreeUpdate(repo, tree, base, subtree.Id(), merge)
 }
