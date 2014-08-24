@@ -95,7 +95,10 @@ func (t *Pipeline) Base(base *git.Tree) *Pipeline {
 // If an error is encountered, the pipeline is aborted.
 func (t *Pipeline) Run() (*git.Tree, error) {
 	var in *git.Tree
-	if t.prev != nil {
+	// Call the previous operation before our own
+	// (unless the current operation is Empty or Base, since they would
+	// discard the result anyway)
+	if t.prev != nil && t.op != OpEmpty && t.op != OpBase {
 		prevOut, err := t.prev.Run()
 		if err != nil {
 			return nil, err
