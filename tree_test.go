@@ -21,6 +21,36 @@ func nukeRepo(repo *git.Repository) {
 	os.RemoveAll(repo.Path())
 }
 
+func TestPipeline(t *testing.T) {
+	r := tmpRepo(t)
+	p := NewPipeline(r).Set("foo", "bar").Set("a/b/c", "hello").Mkdir("a/b/c/d")
+	if p == nil {
+		t.Fatalf("%#v", p)
+	}
+	out, err := p.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := out.EntryByPath("foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	val, err := lookupBlob(r, e.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(val.Contents()) != "bar" {
+		t.Fatalf("%#v", out)
+	}
+	e, err = out.EntryByPath("a/b/c")
+	if err != nil {
+		t.Fatalf("%#v", e)
+	}
+	if e.Type != git.ObjectTree {
+		t.Fatalf("%#v", e)
+	}
+}
+
 func TestEmptyTree(t *testing.T) {
 	repo := tmpRepo(t)
 	defer nukeRepo(repo)
