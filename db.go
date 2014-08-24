@@ -136,7 +136,7 @@ func (db *DB) Add(key string, id *git.Oid) error {
 	if db.parent != nil {
 		return db.parent.Add(path.Join(db.scope, key), id)
 	}
-	newTree, err := TreeAdd(db.repo, db.tree, key, id, true)
+	newTree, err := NewPipeline(db.repo).Base(db.tree).Add(key, id, true).Run()
 	if err != nil {
 		return err
 	}
