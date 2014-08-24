@@ -212,11 +212,8 @@ func (db *DB) Mkdir(key string) error {
 	if db.parent != nil {
 		return db.parent.Mkdir(path.Join(db.scope, key))
 	}
-	empty, err := emptyTree(db.repo)
-	if err != nil {
-		return fmt.Errorf("emptyTree: %v", err)
-	}
-	newTree, err := TreeAdd(db.repo, db.tree, path.Join(db.scope, key), empty, true)
+	p := NewPipeline(db.repo)
+	newTree, err := p.Base(db.tree).Mkdir(path.Join(db.scope, key)).Run()
 	if err != nil {
 		return fmt.Errorf("TreeAdd: %v", err)
 	}
