@@ -2,6 +2,7 @@ package libpack
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -131,7 +132,15 @@ func TestScopeSetGet(t *testing.T) {
 	assertGet(t, root, "foo/bar/hello", "world")
 }
 
-func assertGet(t *testing.T, db *DB, key, val string) {
+// A convenience interface to allow querying DB and GlobalTree
+// with the same utilities
+type ReadDB interface {
+	Get(string) (string, error)
+	List(string) ([]string, error)
+	Dump(io.Writer) error
+}
+
+func assertGet(t *testing.T, db ReadDB, key, val string) {
 	if v, err := db.Get(key); err != nil {
 		fmt.Fprintf(os.Stderr, "--- db dump ---\n")
 		db.Dump(os.Stderr)
@@ -146,7 +155,7 @@ func assertGet(t *testing.T, db *DB, key, val string) {
 }
 
 // Assert that the specified key does not exist in db
-func assertNotExist(t *testing.T, db *DB, key string) {
+func assertNotExist(t *testing.T, db ReadDB, key string) {
 	if _, err := db.Get(key); err == nil {
 		fmt.Fprintf(os.Stderr, "--- db dump ---\n")
 		db.Dump(os.Stderr)
