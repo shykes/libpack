@@ -253,31 +253,10 @@ func (db *DB) Set(key, value string) error {
 	if db.parent != nil {
 		return db.parent.Set(path.Join(db.scope, key), value)
 	}
-	var (
-		id  *git.Oid
-		err error
-	)
-	// FIXME: libgit2 crashes if value is empty.
-	// Work around this by shelling out to git.
-	if value == "" {
-		out, err := exec.Command("git", "--git-dir", db.repo.Path(), "hash-object", "-w", "--stdin").Output()
-		if err != nil {
-			return fmt.Errorf("git hash-object: %v", err)
-		}
-		id, err = git.NewOid(strings.Trim(string(out), " \t\r\n"))
-		if err != nil {
-			return fmt.Errorf("git newoid %v", err)
-		}
-	} else {
-		id, err = db.repo.CreateBlobFromBuffer([]byte(value))
-		if err != nil {
-			return err
-		}
-	}
-	// note: db.tree might be nil if this is the first entry
-	newTree, err := TreeAdd(db.repo, db.tree, path.Join(db.scope, key), id, true)
+	p := NewPipeline(db.repo)
+	newTree, err := p.Base(db.tree).Set(path.Join(db.scope, key), value).Run()
 	if err != nil {
-		return fmt.Errorf("treeupdate: %v", err)
+		return err
 	}
 	db.tree = newTree
 	return nil
