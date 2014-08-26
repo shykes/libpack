@@ -498,23 +498,6 @@ func (db *DB) lookupCommit(id *git.Oid) (*git.Commit, error) {
 	return nil, fmt.Errorf("hash %v exist but is not a commit", id)
 }
 
-func TreeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
-	if tree == nil {
-		return nil, fmt.Errorf("tree undefined")
-	}
-	name = TreePath(name)
-	if name == "/" {
-		// Allocate a new Tree object so that the caller
-		// can always call Free() on the result
-		return lookupTree(repo, tree.Id())
-	}
-	entry, err := tree.EntryByPath(name)
-	if err != nil {
-		return nil, err
-	}
-	return lookupTree(repo, entry.Id)
-}
-
 // emptyTree creates an empty Git tree and returns its ID
 // (the ID will always be the same)
 func emptyTree(repo *git.Repository) (*git.Oid, error) {

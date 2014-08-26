@@ -221,3 +221,20 @@ func TreeDump(r *git.Repository, t *git.Tree, key string, dst io.Writer) error {
 		return nil
 	})
 }
+
+func TreeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
+	if tree == nil {
+		return nil, fmt.Errorf("tree undefined")
+	}
+	name = TreePath(name)
+	if name == "/" {
+		// Allocate a new Tree object so that the caller
+		// can always call Free() on the result
+		return lookupTree(repo, tree.Id())
+	}
+	entry, err := tree.EntryByPath(name)
+	if err != nil {
+		return nil, err
+	}
+	return lookupTree(repo, entry.Id)
+}
