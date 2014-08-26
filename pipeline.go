@@ -149,11 +149,21 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 				{
 					id = val
 				}
+			case *DB:
+				{
+					tree, err := val.Tree()
+					// FIXME: distinguish "no such entry" errors (which we can ignore)
+					// from other errors (which we should forward)
+					if err == nil && tree != nil {
+						id = tree.Id()
+					}
+				}
 			default:
 				{
-					return nil, fmt.Errorf("invalid value: %v", val)
+					return nil, fmt.Errorf("invalid value: %#v", val)
 				}
 			}
+			fmt.Printf("ADD %s %v\n", arg.key, id)
 			return treeAdd(t.repo, in, arg.key, id, arg.merge)
 		}
 	case OpMkdir:
@@ -174,7 +184,6 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 			if !ok {
 				return nil, fmt.Errorf("invalid argument")
 			}
-			fmt.Printf("ADD %v\n", kv)
 			if len(kv) != 2 {
 				return nil, fmt.Errorf("invalid argument")
 			}
@@ -194,7 +203,6 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 					return nil, fmt.Errorf("git newoid %v", err)
 				}
 			} else {
-				fmt.Printf("CreateBlobFromBuffer: %#v\n", kv[1])
 				id, err = t.repo.CreateBlobFromBuffer([]byte(kv[1]))
 				if err != nil {
 					return nil, err

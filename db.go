@@ -24,13 +24,13 @@ type DB struct {
 	parent *DB
 }
 
-func (db *DB) Scope(scope string) *DB {
+func (db *DB) Scope(scope ...string) *DB {
 	// FIXME: do we risk duplicate db.repo.Free()?
 	return &DB{
 		repo:   db.repo,
 		commit: db.commit,
 		ref:    db.ref,
-		scope:  scope, // If parent!=nil, scope is relative to parent
+		scope:  path.Join(scope...), // If parent!=nil, scope is relative to parent
 		tree:   db.tree,
 		parent: db,
 	}
@@ -107,15 +107,12 @@ func (db *DB) Repo() *git.Repository {
 	return db.repo
 }
 
+func (db *DB) Tree() (*git.Tree, error) {
+	return TreeScope(db.repo, db.tree, db.scope)
+}
+
 func (db *DB) Dump(dst io.Writer) error {
-	return db.Walk("/", func(key string, obj git.Object) error {
-		if _, isTree := obj.(*git.Tree); isTree {
-			fmt.Fprintf(dst, "%s/\n", key)
-		} else if blob, isBlob := obj.(*git.Blob); isBlob {
-			fmt.Fprintf(dst, "%s = %s\n", key, blob.Contents())
-		}
-		return nil
-	})
+	return TreeDump(db.repo, db.tree, path.Join(db.scope, "/"), dst)
 }
 
 // AddDB copies the contents of src into db at prefix key.
@@ -145,34 +142,7 @@ func (db *DB) Add(key string, obj interface{}) error {
 }
 
 func (db *DB) Walk(key string, h func(string, git.Object) error) error {
-	if db.tree == nil {
-		return fmt.Errorf("no tree to walk")
-	}
-	subtree, err := lookupSubtree(db.repo, db.tree, key)
-	if err != nil {
-		return err
-	}
-	var handlerErr error
-	err = subtree.Walk(func(parent string, e *git.TreeEntry) int {
-		obj, err := db.repo.Lookup(e.Id)
-		if err != nil {
-			handlerErr = err
-			return -1
-		}
-		if err := h(path.Join(parent, e.Name), obj); err != nil {
-			handlerErr = err
-			return -1
-		}
-		obj.Free()
-		return 0
-	})
-	if handlerErr != nil {
-		return handlerErr
-	}
-	if err != nil {
-		return err
-	}
-	return nil
+	return TreeWalk(db.repo, db.tree, path.Join(db.scope, key), h)
 }
 
 // Update looks up the value of the database's reference, and changes
@@ -228,20 +198,7 @@ func (db *DB) Get(key string) (string, error) {
 	if db.parent != nil {
 		return db.parent.Get(path.Join(db.scope, key))
 	}
-	if db.tree == nil {
-		return "", os.ErrNotExist
-	}
-	key = TreePath(key)
-	e, err := db.tree.EntryByPath(path.Join(db.scope, key))
-	if err != nil {
-		return "", err
-	}
-	blob, err := db.lookupBlob(e.Id)
-	if err != nil {
-		return "", err
-	}
-	defer blob.Free()
-	return string(blob.Contents()), nil
+	return TreeGet(db.repo, db.tree, path.Join(db.scope, key))
 }
 
 // Set writes the specified value in a Git blob, and updates the
@@ -287,23 +244,7 @@ func TreePath(p string) string {
 // List returns a list of object names at the subtree `key`.
 // If there is no subtree at `key`, an error is returned.
 func (db *DB) List(key string) ([]string, error) {
-	if db.tree == nil {
-		return []string{}, nil
-	}
-	subtree, err := lookupSubtree(db.repo, db.tree, path.Join(db.scope, key))
-	if err != nil {
-		return nil, err
-	}
-	defer subtree.Free()
-	var (
-		i     uint64
-		count uint64 = subtree.EntryCount()
-	)
-	entries := make([]string, 0, count)
-	for i = 0; i < count; i++ {
-		entries = append(entries, subtree.EntryByIndex(i).Name)
-	}
-	return entries, nil
+	return TreeList(db.repo, db.tree, path.Join(db.scope, key))
 }
 
 // Commit atomically stores all database changes since the last commit
@@ -314,7 +255,8 @@ func (db *DB) Commit(msg string) error {
 		return db.parent.Commit(msg)
 	}
 	if db.tree == nil {
-		return fmt.Errorf("nothing to commit")
+		// Nothing to commit
+		return nil
 	}
 	// FIXME: the ref might have been changed by another
 	// process. We must implement either 1) reliable locking
@@ -327,7 +269,8 @@ func (db *DB) Commit(msg string) error {
 			return err
 		}
 		if commitTree.Id().Equal(db.tree.Id()) {
-			return fmt.Errorf("nothing to commit")
+			// Nothing to commit
+			return nil
 		}
 		parents = append(parents, db.commit)
 	}
@@ -451,7 +394,7 @@ func (db *DB) CheckoutUncommitted(dir string) error {
 	if db.tree == nil {
 		return fmt.Errorf("no tree")
 	}
-	tree, err := lookupSubtree(db.repo, db.tree, db.scope)
+	tree, err := TreeScope(db.repo, db.tree, db.scope)
 	if err != nil {
 		return err
 	}
@@ -512,19 +455,6 @@ func (db *DB) ExecInCheckout(path string, args ...string) error {
 	return cmd.Run()
 }
 
-// lookupBlob looks up an object at hash `id` in `repo`, and returns
-// it as a git blob. If the object is not a blob, an error is returned.
-func (db *DB) lookupBlob(id *git.Oid) (*git.Blob, error) {
-	obj, err := db.repo.Lookup(id)
-	if err != nil {
-		return nil, err
-	}
-	if blob, ok := obj.(*git.Blob); ok {
-		return blob, nil
-	}
-	return nil, fmt.Errorf("hash %v exist but is not a blob", id)
-}
-
 // lookupTree looks up an object at hash `id` in `repo`, and returns
 // it as a git tree. If the object is not a tree, an error is returned.
 func (db *DB) lookupTree(id *git.Oid) (*git.Tree, error) {
@@ -542,6 +472,8 @@ func lookupTree(r *git.Repository, id *git.Oid) (*git.Tree, error) {
 	return nil, fmt.Errorf("hash %v exist but is not a tree", id)
 }
 
+// lookupBlob looks up an object at hash `id` in `repo`, and returns
+// it as a git blob. If the object is not a blob, an error is returned.
 func lookupBlob(r *git.Repository, id *git.Oid) (*git.Blob, error) {
 	obj, err := r.Lookup(id)
 	if err != nil {
@@ -566,7 +498,7 @@ func (db *DB) lookupCommit(id *git.Oid) (*git.Commit, error) {
 	return nil, fmt.Errorf("hash %v exist but is not a commit", id)
 }
 
-func lookupSubtree(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
+func TreeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
 	if tree == nil {
 		return nil, fmt.Errorf("tree undefined")
 	}

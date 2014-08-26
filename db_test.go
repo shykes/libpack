@@ -1,6 +1,7 @@
 package libpack
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -123,6 +124,17 @@ func TestScopeNoop(t *testing.T) {
 	}
 }
 
+func TestScopeDump(t *testing.T) {
+	db := tmpDB(t, "")
+	defer nukeDB(db)
+	db.Set("a/b/c/foo", "bar")
+	var buf bytes.Buffer
+	db.Scope("a/b/c").Dump(&buf)
+	if s := buf.String(); s != "foo = bar\n" {
+		t.Fatalf("%#v", s)
+	}
+}
+
 func TestScopeSetGet(t *testing.T) {
 	root := tmpDB(t, "")
 	defer nukeDB(root)
@@ -130,6 +142,21 @@ func TestScopeSetGet(t *testing.T) {
 	scoped.Set("hello", "world")
 	assertGet(t, scoped, "hello", "world")
 	assertGet(t, root, "foo/bar/hello", "world")
+}
+
+func TestScopeTree(t *testing.T) {
+	db := tmpDB(t, "")
+	defer nukeDB(db)
+	db.Set("a/b/c/d/hello", "world")
+	tree, err := db.Scope("a/b/c/d").Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	TreeDump(db.repo, tree, "/", &buf)
+	if s := buf.String(); s != "hello = world\n" {
+		t.Fatalf("%v", s)
+	}
 }
 
 // A convenience interface to allow querying DB and GlobalTree
@@ -536,4 +563,21 @@ func TestAddDB(t *testing.T) {
 	assertGet(t, db2, "db1/foo/bar/baz", "hello there")
 	assertGet(t, db2, "db1/foo/bar/abc", "xyz")
 	assertGet(t, db2, "db1/foo/bar/abc", "xyz")
+}
+
+func TestEmptyCommit(t *testing.T) {
+	db := tmpDB(t, "")
+	defer nukeDB(db)
+	if err := db.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+	db.Set("foo", "bar")
+	// This should commit something
+	if err := db.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+	// This should commit nothing (but not fail)
+	if err := db.Commit(""); err != nil {
+		t.Fatal(err)
+	}
 }
