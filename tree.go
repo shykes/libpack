@@ -7,7 +7,7 @@ import (
 	git "github.com/libgit2/git2go"
 )
 
-// TreeAdd creates a new Git tree by adding a new object
+// treeAdd creates a new Git tree by adding a new object
 // to it at the specified path.
 // Intermediary subtrees are created as needed.
 // If an object already exists at key or any intermediary path,
@@ -24,16 +24,16 @@ import (
 // to perform garbage collection, if any.
 // FIXME: manage garbage collection, or provide a list of created
 // objects.
-func TreeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid, merge bool) (t *git.Tree, err error) {
+func treeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid, merge bool) (t *git.Tree, err error) {
 	/*
-	** // Primitive but convenient tracing for debugging recursive calls to TreeAdd.
+	** // Primitive but convenient tracing for debugging recursive calls to treeAdd.
 	** // Uncomment this block for debug output.
 	**
 	** var callString string
 	** if tree != nil {
-	** 		callString = fmt.Sprintf("   TreeAdd %v:\t\t%s\t\t\t= %v", tree.Id(), key, valueId)
+	** 		callString = fmt.Sprintf("   treeAdd %v:\t\t%s\t\t\t= %v", tree.Id(), key, valueId)
 	** 	} else {
-	** 		callString = fmt.Sprintf("   TreeAdd %v:\t\t%s\t\t\t= %v", tree, key, valueId)
+	** 		callString = fmt.Sprintf("   treeAdd %v:\t\t%s\t\t\t= %v", tree, key, valueId)
 	** 	}
 	** 	fmt.Printf("   %s\n", callString)
 	** 	defer func() {
@@ -104,7 +104,7 @@ func TreeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid,
 			for i := uint64(0); i < oTree.EntryCount(); i++ {
 				var err error
 				e := oTree.EntryByIndex(i)
-				subTree, err = TreeAdd(repo, subTree, e.Name, e.Id, merge)
+				subTree, err = treeAdd(repo, subTree, e.Name, e.Id, merge)
 				if err != nil {
 					return nil, err
 				}
@@ -130,9 +130,9 @@ func TreeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid,
 		}
 		return newTree, nil
 	}
-	subtree, err := TreeAdd(repo, nil, leaf, valueId, merge)
+	subtree, err := treeAdd(repo, nil, leaf, valueId, merge)
 	if err != nil {
 		return nil, err
 	}
-	return TreeAdd(repo, tree, base, subtree.Id(), merge)
+	return treeAdd(repo, tree, base, subtree.Id(), merge)
 }

@@ -132,11 +132,11 @@ func (db *DB) AddDB(key string, src *DB) error {
 	return db.Add(key, src.tree.Id())
 }
 
-func (db *DB) Add(key string, id *git.Oid) error {
+func (db *DB) Add(key string, obj interface{}) error {
 	if db.parent != nil {
-		return db.parent.Add(path.Join(db.scope, key), id)
+		return db.parent.Add(path.Join(db.scope, key), obj)
 	}
-	newTree, err := NewPipeline(db.repo).Base(db.tree).Add(key, id, true).Run()
+	newTree, err := NewPipeline(db.repo).Base(db.tree).Add(key, obj, true).Run()
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (db *DB) Mkdir(key string) error {
 	p := NewPipeline(db.repo)
 	newTree, err := p.Base(db.tree).Mkdir(path.Join(db.scope, key)).Run()
 	if err != nil {
-		return fmt.Errorf("TreeAdd: %v", err)
+		return err
 	}
 	db.tree = newTree
 	return nil

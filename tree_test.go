@@ -72,26 +72,26 @@ func TestUpdateTree1(t *testing.T) {
 	}
 	emptyId, _ := emptyTree(repo)
 	empty, _ := lookupTree(repo, emptyId)
-	t1, err := TreeAdd(repo, empty, "foo", hello, true)
+	t1, err := treeAdd(repo, empty, "foo", hello, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertBlobInTree(t, repo, t1, "foo", "hello")
 
-	t2, err := TreeAdd(repo, t1, "subtree", t1.Id(), true)
+	t2, err := treeAdd(repo, t1, "subtree", t1.Id(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertBlobInTree(t, repo, t2, "foo", "hello")
 	assertBlobInTree(t, repo, t2, "subtree/foo", "hello")
 
-	t3, err := TreeAdd(repo, empty, "subtree/subsubtree", t1.Id(), true)
+	t3, err := treeAdd(repo, empty, "subtree/subsubtree", t1.Id(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertBlobInTree(t, repo, t3, "subtree/subsubtree/foo", "hello")
 
-	t4, err := TreeAdd(repo, t2, "/", t3.Id(), true)
+	t4, err := treeAdd(repo, t2, "/", t3.Id(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,12 +99,12 @@ func TestUpdateTree1(t *testing.T) {
 	assertBlobInTree(t, repo, t4, "subtree/foo", "hello")
 	assertBlobInTree(t, repo, t4, "subtree/subsubtree/foo", "hello")
 
-	t1b, err := TreeAdd(repo, empty, "bar", hello, true)
+	t1b, err := treeAdd(repo, empty, "bar", hello, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t2b, err := TreeAdd(repo, t1, "/", t1b.Id(), true)
+	t2b, err := treeAdd(repo, t1, "/", t1b.Id(), true)
 	if err != nil {
 		t.Fatal(err)
 	}

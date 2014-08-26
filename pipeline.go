@@ -154,7 +154,7 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 					return nil, fmt.Errorf("invalid value: %v", val)
 				}
 			}
-			return TreeAdd(t.repo, in, arg.key, id, arg.merge)
+			return treeAdd(t.repo, in, arg.key, id, arg.merge)
 		}
 	case OpMkdir:
 		{
@@ -166,7 +166,7 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 			if err != nil {
 				return nil, err
 			}
-			return TreeAdd(t.repo, in, key, empty, true)
+			return treeAdd(t.repo, in, key, empty, true)
 		}
 	case OpSet:
 		{
@@ -200,7 +200,7 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 					return nil, err
 				}
 			}
-			return TreeAdd(t.repo, in, kv[0], id, true)
+			return treeAdd(t.repo, in, kv[0], id, true)
 		}
 	}
 	return nil, fmt.Errorf("invalid op: %v", t.op)
