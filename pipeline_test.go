@@ -57,3 +57,13 @@ func TestAddPipeline(t *testing.T) {
 	assertBlobInTree(t, r, tree, "subdir/foo", "bar")
 	assertBlobInTree(t, r, tree, "foo", "abc")
 }
+
+func TestScope(t *testing.T) {
+	r := tmpRepo(t)
+	defer nukeRepo(r)
+	tree, err := NewPipeline(r).Set("a/b/c/d", "hello").Scope("a/b/c").Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBlobInTree(t, r, tree, "d", "hello")
+}

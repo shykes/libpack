@@ -39,6 +39,7 @@ const (
 	OpSet
 	OpMkdir
 	OpAdd
+	OpScope
 )
 
 // NewPIpeline creates a new empty pipeline.
@@ -91,6 +92,10 @@ func (t *Pipeline) Mkdir(key string) *Pipeline {
 // `base` discards the input tree and outputs `base` instead.
 func (t *Pipeline) Base(base *git.Tree) *Pipeline {
 	return t.setPrev(OpBase, base)
+}
+
+func (t *Pipeline) Scope(key string) *Pipeline {
+	return t.setPrev(OpScope, key)
 }
 
 // Run runs each step of the pipeline in sequence, each time passing
@@ -209,6 +214,14 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 				}
 			}
 			return treeAdd(t.repo, in, kv[0], id, true)
+		}
+	case OpScope:
+		{
+			key, ok := t.arg.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid argument")
+			}
+			return TreeScope(t.repo, in, key)
 		}
 	}
 	return nil, fmt.Errorf("invalid op: %v", t.op)
