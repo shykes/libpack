@@ -62,7 +62,7 @@ func Fatalf(msg string, args ...interface{}) {
 }
 
 func Pack(repo, dir, branch string) (hash string, err error) {
-	db, err := libpack.Init(repo, branch, "")
+	db, err := libpack.Init(repo, branch)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func Pack(repo, dir, branch string) (hash string, err error) {
 }
 
 func Unpack(repo, dir, hash string) error {
-	db, err := libpack.Init(repo, hash, "")
+	db, err := libpack.Init(repo, hash)
 	if err != nil {
 		return err
 	}
