@@ -80,7 +80,7 @@ func (g *GlobalTree) Mount(dst string) error {
 }
 
 func (g *GlobalTree) getMount(dir string) (*Mount, error) {
-	blob, err := g.db.Scope("mounts").Get(annotationPath(dir))
+	blob, err := g.db.Scope("mounts").Get(MkAnnotation(dir))
 	if err != nil {
 		return nil, err
 	}
@@ -125,11 +125,11 @@ func parseMount(data string) (*Mount, error) {
 }
 
 func getAnnotation(db *DB, name string) (string, error) {
-	return db.Get(annotationPath(name))
+	return db.Get(MkAnnotation(name))
 }
 
 func setAnnotation(db *DB, name, value string) error {
-	return db.Set(annotationPath(name), value)
+	return db.Set(MkAnnotation(name), value)
 }
 
 func walkAnnotations(db *DB, h func(name, value string)) error {
@@ -138,7 +138,7 @@ func walkAnnotations(db *DB, h func(name, value string)) error {
 		if !isBlob {
 			return nil
 		}
-		targetPath, err := asAnnotation(k)
+		targetPath, err := ParseAnnotation(k)
 		if err != nil {
 			return err
 		}
@@ -147,17 +147,17 @@ func walkAnnotations(db *DB, h func(name, value string)) error {
 	})
 }
 
-func annotationPath(name string) string {
-	name = TreePath(name)
-	if name == "/" {
+func MkAnnotation(target string) string {
+	target = TreePath(target)
+	if target == "/" {
 		return "0"
 	}
-	return fmt.Sprintf("%d/%s", strings.Count(name, "/")+1, name)
+	return fmt.Sprintf("%d/%s", strings.Count(target, "/")+1, target)
 }
 
-func asAnnotation(name string) (string, error) {
-	name = TreePath(name)
-	parts := strings.Split(name, "/")
+func ParseAnnotation(annot string) (target string, err error) {
+	annot = TreePath(annot)
+	parts := strings.Split(annot, "/")
 	if len(parts) == 0 {
 		return "", fmt.Errorf("invalid annotation path")
 	}
