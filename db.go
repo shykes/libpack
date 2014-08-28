@@ -26,11 +26,13 @@ type DB struct {
 
 func (db *DB) Scope(scope ...string) *DB {
 	// FIXME: do we risk duplicate db.repo.Free()?
+	newScope := []string{db.scope}
+	newScope = append(newScope, scope...)
 	return &DB{
 		repo:   db.repo,
 		commit: db.commit,
 		ref:    db.ref,
-		scope:  path.Join(scope...), // If parent!=nil, scope is relative to parent
+		scope:  path.Join(newScope...), // If parent!=nil, scope is relative to parent
 		tree:   db.tree,
 		parent: db,
 	}

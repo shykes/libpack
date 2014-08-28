@@ -159,6 +159,19 @@ func TestScopeTree(t *testing.T) {
 	}
 }
 
+func TestMultiScope(t *testing.T) {
+	root := tmpDB(t, "")
+	defer nukeDB(root)
+	root.Set("a/b/c/d", "hello")
+	a := root.Scope("a")
+	ab := a.Scope("b")
+	var abDump bytes.Buffer
+	ab.Dump(&abDump)
+	if s := abDump.String(); s != "c/\nc/d = hello\n" {
+		t.Fatalf("%v\n", s)
+	}
+}
+
 // A convenience interface to allow querying DB and GlobalTree
 // with the same utilities
 type ReadDB interface {
