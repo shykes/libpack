@@ -2,7 +2,6 @@ package libpack
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"fmt"
 	"io"
 	"os"
@@ -70,13 +69,13 @@ func (db *DB) SetTar(src io.Reader) error {
 		}
 		fmt.Printf("    ---> storing metadata in %s\n", metaPath(hdr.Name))
 		if err := db.SetStream(metaPath(hdr.Name), metaBlob); err != nil {
-			return err
+			continue
 		}
 		// FIXME: git can carry symlinks as well
 		if hdr.Typeflag == tar.TypeReg {
 			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
 			if err := db.SetStream(path.Join("_fs_data", hdr.Name), tr); err != nil {
-				return err
+				continue
 			}
 		}
 	}
@@ -89,9 +88,7 @@ func (db *DB) SetTar(src io.Reader) error {
 // This path will be used to store and retrieve the tar header encoding the metadata
 // for the corresponding file.
 func metaPath(name string) string {
-	name = path.Clean(name)
-	// FIXME: this doesn't seem to yield the expected result.
-	return path.Join(MetaTree, fmt.Sprintf("%x", sha1.Sum([]byte(name))))
+	return path.Join(MetaTree, MkAnnotation(name))
 }
 
 func headerReader(hdr *tar.Header) (io.Reader, error) {
