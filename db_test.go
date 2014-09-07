@@ -185,12 +185,12 @@ func assertGet(t *testing.T, db ReadDB, key, val string) {
 		fmt.Fprintf(os.Stderr, "--- db dump ---\n")
 		db.Dump(os.Stderr)
 		fmt.Fprintf(os.Stderr, "--- end db dump ---\n")
-		t.Fatalf("assert %v=%v db:%#v\n=> %v", key, val, db, err)
+		t.Fatalf("assert %v=%v db:%#v\n=> %#v", key, val, db, err)
 	} else if v != val {
 		fmt.Fprintf(os.Stderr, "--- db dump ---\n")
 		db.Dump(os.Stderr)
 		fmt.Fprintf(os.Stderr, "--- end db dump ---\n")
-		t.Fatalf("assert %v=%v db:%#v\n=> %v=%v", key, val, db, key, v)
+		t.Fatalf("assert %v=%v db:%#v\n=> %v=%#v", key, val, db, key, v)
 	}
 }
 
