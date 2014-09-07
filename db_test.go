@@ -279,21 +279,15 @@ func TestSetGetMultiple(t *testing.T) {
 }
 
 func TestCommitConcurrentNoConflict(t *testing.T) {
-	t.Skip("FIXME: concurrent commits always fail, even if they could be merged without conflict")
 	db1 := tmpDB(t, "")
 	defer nukeDB(db1)
 	db2, _ := Open(db1.Repo().Path(), db1.ref)
 
 	db1.Set("foo", "A")
-
 	db2.Set("bar", "B")
 
-	if v, _ := db1.Get("foo"); v != "A" {
-		t.Fatalf("%v", v)
-	}
-	if v, _ := db2.Get("bar"); v != "B" {
-		t.Fatalf("%v", v)
-	}
+	assertGet(t, db1, "foo", "A")
+	assertGet(t, db2, "bar", "B")
 
 	if err := db1.Commit("A"); err != nil {
 		t.Fatal(err)
@@ -302,6 +296,40 @@ func TestCommitConcurrentNoConflict(t *testing.T) {
 	if err := db2.Commit("B"); err != nil {
 		t.Fatalf("%#v", err)
 	}
+
+	db3, _ := Open(db1.Repo().Path(), db1.ref)
+	assertGet(t, db3, "foo", "A")
+	assertGet(t, db3, "bar", "B")
+}
+
+func TestCommitConcurrentWithConflict(t *testing.T) {
+	db1 := tmpDB(t, "")
+	defer nukeDB(db1)
+	db2, _ := Open(db1.Repo().Path(), db1.ref)
+
+	db1.Set("foo", "A")
+	db2.Set("foo", "B")
+	db1.Set("1", "written by 1")
+
+	db1.Set("2", "written by 2")
+
+	assertGet(t, db1, "foo", "A")
+	assertGet(t, db2, "foo", "B")
+
+	if err := db1.Commit("A"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db2.Commit("B"); err != nil {
+		t.Fatalf("%#v", err)
+	}
+
+	db3, err := Open(db1.Repo().Path(), db1.ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGet(t, db3, "foo", "B")
+	assertGet(t, db3, "1", "written by 1")
+	assertGet(t, db3, "2", "written by 2")
 }
 
 func TestSetCommitGet(t *testing.T) {

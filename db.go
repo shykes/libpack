@@ -172,7 +172,7 @@ func (db *DB) Update() error {
 	if db.commit != nil && db.commit.Id().Equal(tip.Target()) {
 		return nil
 	}
-	commit, err := db.lookupCommit(tip.Target())
+	commit, err := lookupCommit(db.repo, tip.Target())
 	if err != nil {
 		return err
 	}
@@ -276,34 +276,7 @@ func (db *DB) Commit(msg string) error {
 		// Nothing to commit
 		return nil
 	}
-	// FIXME: the ref might have been changed by another
-	// process. We must implement either 1) reliable locking
-	// or 2) a solid merge resolution strategy.
-	// For now we simply assume the ref has not changed.
-	var parents []*git.Commit
-	if db.commit != nil {
-		commitTree, err := db.commit.Tree()
-		if err != nil {
-			return err
-		}
-		if commitTree.Id().Equal(db.tree.Id()) {
-			// Nothing to commit
-			return nil
-		}
-		parents = append(parents, db.commit)
-	}
-	commitId, err := db.repo.CreateCommit(
-		db.ref,
-		&git.Signature{"libpack", "libpack", time.Now()}, // author
-		&git.Signature{"libpack", "libpack", time.Now()}, // committer
-		msg,
-		db.tree,    // git tree to commit
-		parents..., // parent commit (0 or 1)
-	)
-	if err != nil {
-		return err
-	}
-	commit, err := db.lookupCommit(commitId)
+	commit, err := CommitToRef(db.repo, db.tree, db.commit, db.ref, msg)
 	if err != nil {
 		return err
 	}
@@ -312,6 +285,127 @@ func (db *DB) Commit(msg string) error {
 	}
 	db.commit = commit
 	return nil
+}
+
+func CommitToRef(r *git.Repository, tree *git.Tree, parent *git.Commit, refname, msg string) (*git.Commit, error) {
+	// Retry loop in case of conflict
+	// FIXME: use a custom inter-process lock as a first attempt for performance
+	var (
+		needMerge bool
+		tmpCommit *git.Commit
+	)
+	for {
+		if !needMerge {
+			// Create simple commit
+			commit, err := mkCommit(r, refname, msg, tree, parent)
+			if isGitConcurrencyErr(err) {
+				needMerge = true
+				continue
+			}
+			return commit, err
+		} else {
+			if tmpCommit == nil {
+				var err error
+				// Create a temporary intermediary commit, to pass to MergeCommits
+				// NOTE: this commit will not be part of the final history.
+				tmpCommit, err = mkCommit(r, "", msg, tree, parent)
+				if err != nil {
+					return nil, err
+				}
+				defer tmpCommit.Free()
+			}
+			// Lookup tip from ref
+			tip := lookupTip(r, refname)
+			if tip == nil {
+				// Ref may have been deleted after previous merge error
+				needMerge = false
+				continue
+			}
+
+			// Merge simple commit with the tip
+			opts, err := git.DefaultMergeOptions()
+			if err != nil {
+				return nil, err
+			}
+			idx, err := r.MergeCommits(tmpCommit, tip, &opts)
+			if err != nil {
+				return nil, err
+			}
+			conflicts, err := idx.ConflictIterator()
+			if err != nil {
+				return nil, err
+			}
+			defer conflicts.Free()
+			for {
+				c, err := conflicts.Next()
+				if isGitIterOver(err) {
+					break
+				} else if err != nil {
+					return nil, err
+				}
+				if c.Our != nil {
+					idx.RemoveConflict(c.Our.Path)
+					if err := idx.Add(c.Our); err != nil {
+						return nil, fmt.Errorf("error resolving merge conflict for '%s': %v", c.Our.Path, err)
+					}
+				}
+			}
+			mergedId, err := idx.WriteTreeTo(r)
+			if err != nil {
+				return nil, fmt.Errorf("WriteTree: %v", err)
+			}
+			mergedTree, err := lookupTree(r, mergedId)
+			if err != nil {
+				return nil, err
+			}
+			// Create new commit from merged tree (discarding simple commit)
+			commit, err := mkCommit(r, refname, msg, mergedTree, parent, tip)
+			if isGitConcurrencyErr(err) {
+				// FIXME: enforce a maximum number of retries to avoid infinite loops
+				continue
+			}
+			return commit, err
+		}
+	}
+	return nil, fmt.Errorf("too many failed merge attempts, giving up")
+}
+
+func mkCommit(r *git.Repository, refname string, msg string, tree *git.Tree, parent *git.Commit, extraParents ...*git.Commit) (*git.Commit, error) {
+	var parents []*git.Commit
+	if parent != nil {
+		parents = append(parents, parent)
+	}
+	if len(extraParents) > 0 {
+		parents = append(parents, extraParents...)
+	}
+	id, err := r.CreateCommit(
+		refname,
+		&git.Signature{"libpack", "libpack", time.Now()}, // author
+		&git.Signature{"libpack", "libpack", time.Now()}, // committer
+		msg,
+		tree, // git tree to commit
+		parents...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return lookupCommit(r, id)
+}
+
+func isGitConcurrencyErr(err error) bool {
+	gitErr, ok := err.(*git.GitError)
+	if !ok {
+		return false
+	}
+	return gitErr.Class == 11 && gitErr.Code == -15
+}
+
+func isGitIterOver(err error) bool {
+	gitErr, ok := err.(*git.GitError)
+	if !ok {
+		return false
+	}
+	return gitErr.Code == git.ErrIterOver
 }
 
 // Pull downloads objects at the specified url and remote ref name,
@@ -503,10 +597,25 @@ func lookupBlob(r *git.Repository, id *git.Oid) (*git.Blob, error) {
 	return nil, fmt.Errorf("hash %v exist but is not a blob", id)
 }
 
+// lookupTip looks up the object referenced by refname, and returns it
+// as a Commit object. If the reference does not exist, or if object is
+// not a commit, nil is returned. Other errors cannot be detected.
+func lookupTip(r *git.Repository, refname string) *git.Commit {
+	ref, err := r.LookupReference(refname)
+	if err != nil {
+		return nil
+	}
+	commit, err := lookupCommit(r, ref.Target())
+	if err != nil {
+		return nil
+	}
+	return commit
+}
+
 // lookupCommit looks up an object at hash `id` in `repo`, and returns
 // it as a git commit. If the object is not a commit, an error is returned.
-func (db *DB) lookupCommit(id *git.Oid) (*git.Commit, error) {
-	obj, err := db.repo.Lookup(id)
+func lookupCommit(r *git.Repository, id *git.Oid) (*git.Commit, error) {
+	obj, err := r.Lookup(id)
 	if err != nil {
 		return nil, err
 	}
