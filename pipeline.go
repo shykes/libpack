@@ -168,7 +168,6 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 					return nil, fmt.Errorf("invalid value: %#v", val)
 				}
 			}
-			fmt.Printf("ADD %s %v\n", arg.key, id)
 			return treeAdd(t.repo, in, arg.key, id, arg.merge)
 		}
 	case OpMkdir:
