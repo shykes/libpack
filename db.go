@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	git "github.com/libgit2/git2go"
@@ -22,6 +23,7 @@ type DB struct {
 	scope  string
 	tree   *git.Tree
 	parent *DB
+	l      sync.RWMutex
 }
 
 func (db *DB) Scope(scope ...string) *DB {
@@ -84,14 +86,18 @@ func newRepo(repo *git.Repository, ref string) (*DB, error) {
 // This is required in addition to Golang garbage collection, because
 // of the libgit2 C bindings.
 func (db *DB) Free() {
+	db.l.Lock()
 	db.repo.Free()
 	if db.commit != nil {
 		db.commit.Free()
 	}
+	db.l.Unlock()
 }
 
 // Head returns the id of the latest commit
 func (db *DB) Head() *git.Oid {
+	db.l.RLock()
+	defer db.l.RUnlock()
 	if db.commit != nil {
 		return db.commit.Id()
 	}
@@ -125,6 +131,8 @@ func (db *DB) Dump(dst io.Writer) error {
 // never merged).
 func (db *DB) AddDB(key string, src *DB) error {
 	// No tree to add, nothing to do
+	src.l.RLock()
+	defer src.l.RUnlock()
 	if src.tree == nil {
 		return nil
 	}
@@ -132,6 +140,8 @@ func (db *DB) AddDB(key string, src *DB) error {
 }
 
 func (db *DB) Add(key string, obj interface{}) error {
+	db.l.Lock()
+	defer db.l.Unlock()
 	if db.parent != nil {
 		return db.parent.Add(path.Join(db.scope, key), obj)
 	}
@@ -151,6 +161,8 @@ func (db *DB) Walk(key string, h func(string, git.Object) error) error {
 // the memory representation accordingly.
 // If the committed tree is changed, then uncommitted changes are lost.
 func (db *DB) Update() error {
+	db.l.Lock()
+	defer db.l.Unlock()
 	tip, err := db.repo.LookupReference(db.ref)
 	if err != nil {
 		db.commit = nil
@@ -181,6 +193,8 @@ func (db *DB) Update() error {
 
 // Mkdir adds an empty subtree at key if it doesn't exist.
 func (db *DB) Mkdir(key string) error {
+	db.l.Lock()
+	defer db.l.Unlock()
 	if db.parent != nil {
 		return db.parent.Mkdir(path.Join(db.scope, key))
 	}
@@ -256,6 +270,8 @@ func (db *DB) Commit(msg string) error {
 	if db.parent != nil {
 		return db.parent.Commit(msg)
 	}
+	db.l.Lock()
+	defer db.l.Unlock()
 	if db.tree == nil {
 		// Nothing to commit
 		return nil
