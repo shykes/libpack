@@ -278,6 +278,32 @@ func TestSetGetMultiple(t *testing.T) {
 	}
 }
 
+func TestCommitConcurrentNoConflict(t *testing.T) {
+	t.Skip("FIXME: concurrent commits always fail, even if they could be merged without conflict")
+	db1 := tmpDB(t, "")
+	defer nukeDB(db1)
+	db2, _ := Open(db1.Repo().Path(), db1.ref)
+
+	db1.Set("foo", "A")
+
+	db2.Set("bar", "B")
+
+	if v, _ := db1.Get("foo"); v != "A" {
+		t.Fatalf("%v", v)
+	}
+	if v, _ := db2.Get("bar"); v != "B" {
+		t.Fatalf("%v", v)
+	}
+
+	if err := db1.Commit("A"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db2.Commit("B"); err != nil {
+		t.Fatalf("%#v", err)
+	}
+}
+
 func TestSetCommitGet(t *testing.T) {
 	db := tmpDB(t, "")
 	defer nukeDB(db)
