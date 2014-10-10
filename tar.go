@@ -10,7 +10,7 @@ import (
 
 	git "github.com/libgit2/git2go"
 
-	"github.com/dotcloud/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
+	"github.com/docker/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
 
 const (
