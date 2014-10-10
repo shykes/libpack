@@ -57,6 +57,7 @@ func Init(repo, ref string) (*DB, error) {
 	return db, nil
 }
 
+// Open opens an existing repository. See Init() for parameters.
 func Open(repo, ref string) (*DB, error) {
 	r, err := git.OpenRepository(repo)
 	if err != nil {

@@ -41,6 +41,34 @@ func nukeDB(db *DB) {
 	os.RemoveAll(dir)
 }
 
+func TestOpen(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if db == nil {
+		t.Fatal("db was nil after init")
+	}
+
+	db2, err := Open(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if db2 == nil {
+		t.Fatal("db was nil after init")
+	}
+
+	_, err = Open("/nonexistentpath", "refs/heads/test")
+
+	if err == nil {
+		t.Fatal("Opening nonexistent path without forceInit did not yield an error")
+	}
+}
+
 // Pull on a non-empty destination (ref set and uncommitted changes are present)
 func TestPullToUncommitted(t *testing.T) {
 	db1 := tmpDB(t, "refs/heads/test1")
