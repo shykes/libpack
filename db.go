@@ -237,6 +237,18 @@ func (db *DB) Set(key, value string) error {
 	return nil
 }
 
+// Delete removes a specified key from the uncommitted tree.
+func (db *DB) Delete(key string) error {
+	p := NewPipeline(db.repo)
+	newTree, err := p.Base(db.tree).Delete(path.Join(db.scope, key)).Run()
+	if err != nil {
+		return err
+	}
+
+	db.tree = newTree
+	return nil
+}
+
 // SetStream writes the data from `src` to a new Git blob,
 // and updates the uncommitted tree to point to that blob as `key`.
 func (db *DB) SetStream(key string, src io.Reader) error {

@@ -9,6 +9,41 @@ import (
 	git "github.com/libgit2/git2go"
 )
 
+// Removes a key from the tree.
+func treeDel(repo *git.Repository, tree *git.Tree, key string) (*git.Tree, error) {
+	var err error
+
+	key = TreePath(key)
+	base, leaf := path.Split(key)
+
+	if tree != nil {
+		if tree, err = TreeScope(repo, tree, base); err != nil {
+			return nil, err
+		}
+	}
+
+	builder, err := repo.TreeBuilderFromTree(tree)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := builder.Remove(leaf); err != nil {
+		return nil, err
+	}
+
+	treeId, err := builder.Write()
+	if err != nil {
+		return nil, err
+	}
+
+	newTree, err := lookupTree(repo, treeId)
+	if err != nil {
+		return nil, err
+	}
+
+	return newTree, err
+}
+
 // treeAdd creates a new Git tree by adding a new object
 // to it at the specified path.
 // Intermediary subtrees are created as needed.

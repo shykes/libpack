@@ -30,6 +30,12 @@ type Pipeline struct {
 	arg  interface{}
 }
 
+type addArg struct {
+	key   string
+	val   interface{}
+	merge bool
+}
+
 // A TreeOp defines an individual operation operation in a pipeline.
 type TreeOp int
 
@@ -40,6 +46,7 @@ const (
 	OpMkdir
 	OpAdd
 	OpScope
+	OpDelete
 )
 
 // NewPIpeline creates a new empty pipeline.
@@ -73,10 +80,10 @@ func (t *Pipeline) Add(key string, val interface{}, merge bool) *Pipeline {
 	})
 }
 
-type addArg struct {
-	key   string
-	val   interface{}
-	merge bool
+// Delete appends a new `delete` instruction to a pipeline, then returns the
+// combined Pipeline.
+func (t *Pipeline) Delete(key string) *Pipeline {
+	return t.setPrev(OpDelete, key)
 }
 
 // Mkdir appends a new `mkdir` instruction to a pipeline, and
@@ -169,6 +176,15 @@ func (t *Pipeline) Run() (*git.Tree, error) {
 				}
 			}
 			return treeAdd(t.repo, in, arg.key, id, arg.merge)
+		}
+	case OpDelete:
+		{
+			key, ok := t.arg.(string)
+			if !ok {
+				return nil, fmt.Errorf("delete: invalid argument: %v", t.arg)
+			}
+
+			return treeDel(t.repo, in, key)
 		}
 	case OpMkdir:
 		{

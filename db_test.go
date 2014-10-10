@@ -676,3 +676,38 @@ func TestEmptyCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDelete(t *testing.T) {
+	db1 := tmpDB(t, "refs/heads/delete_test")
+	defer nukeDB(db1)
+
+	if err := db1.Set("test", "quux"); err != nil {
+		t.Fatal(err)
+	}
+
+	str, err := db1.Get("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if str != "quux" {
+		t.Fatal("Test value was not retrieved with Get")
+	}
+
+	if err := db1.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db1.Delete("test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db1.Commit(""); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db1.Get("test")
+	if err == nil {
+		t.Fatal("Test key did not get deleted after delete/commit call")
+	}
+}

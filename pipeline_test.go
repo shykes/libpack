@@ -58,6 +58,16 @@ func TestAddPipeline(t *testing.T) {
 	assertBlobInTree(t, r, tree, "foo", "abc")
 }
 
+func TestDeletePipeline(t *testing.T) {
+	r := tmpRepo(t)
+	defer nukeRepo(r)
+	tree, err := NewPipeline(r).Set("hello", "world").Delete("hello").Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBlobNotInTree(t, r, tree, "hello")
+}
+
 func TestScope(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)

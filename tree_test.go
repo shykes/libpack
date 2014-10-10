@@ -126,3 +126,10 @@ func assertBlobInTree(t *testing.T, repo *git.Repository, tree *git.Tree, key, v
 	}
 	blob.Free()
 }
+
+func assertBlobNotInTree(t *testing.T, repo *git.Repository, tree *git.Tree, key string) {
+	_, err := tree.EntryByPath(key)
+	if err == nil {
+		t.Fatalf("Key %q still exists in tree", key)
+	}
+}
