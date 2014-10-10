@@ -69,6 +69,43 @@ func TestOpen(t *testing.T) {
 	}
 }
 
+func TestOpenOrInit(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+
+	db, err := OpenOrInit(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if db == nil {
+		t.Fatal("db was nil after ForceInit")
+	}
+
+	fi, err := os.Stat(path.Join(tmp, "refs"))
+	if err != nil {
+		t.Fatal("ForceInit did not create a repository")
+	}
+
+	db, err = OpenOrInit(tmp, "refs/heads/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if db == nil {
+		t.Fatal("db was nil after ForceInit")
+	}
+
+	fi2, err := os.Stat(path.Join(tmp, "refs"))
+	if err != nil {
+		t.Fatal("ForceInit wiped out the repository!")
+	}
+
+	if fi.ModTime() != fi2.ModTime() {
+		t.Fatal("ForceInit created a new repository and should have just opened it")
+	}
+}
+
 // Pull on a non-empty destination (ref set and uncommitted changes are present)
 func TestPullToUncommitted(t *testing.T) {
 	db1 := tmpDB(t, "refs/heads/test1")

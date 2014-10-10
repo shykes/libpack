@@ -74,6 +74,14 @@ func Open(repo, ref string) (*DB, error) {
 	return db, nil
 }
 
+func OpenOrInit(repo, ref string) (*DB, error) {
+	if db, err := Open(repo, ref); err == nil {
+		return db, err
+	}
+
+	return Init(repo, ref)
+}
+
 func newRepo(repo *git.Repository, ref string) (*DB, error) {
 	db := &DB{
 		repo: repo,
