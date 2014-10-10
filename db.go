@@ -26,11 +26,11 @@ type DB struct {
 func (db *DB) Scope(scope string) *DB {
 	// FIXME: do we risk duplicate db.repo.Free()?
 	return &DB{
-		repo: db.repo,
+		repo:   db.repo,
 		commit: db.commit,
-		ref: db.ref,
-		scope: scope, // If parent!=nil, scope is relative to parent
-		tree: db.tree,
+		ref:    db.ref,
+		scope:  scope, // If parent!=nil, scope is relative to parent
+		tree:   db.tree,
 		parent: db,
 	}
 }
@@ -52,9 +52,13 @@ func Init(repo, ref, scope string) (*DB, error) {
 	return db, nil
 }
 
-func Open(repo, ref, scope string) (*DB, error) {
+func Open(repo, ref, scope string, forceInit bool) (*DB, error) {
 	r, err := git.OpenRepository(repo)
 	if err != nil {
+		if forceInit {
+			return Init(repo, ref, scope)
+		}
+
 		return nil, err
 	}
 	db, err := newRepo(r, ref, scope)

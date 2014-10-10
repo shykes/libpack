@@ -49,6 +49,43 @@ func TestInit(t *testing.T) {
 	}
 }
 
+func TestOpen(t *testing.T) {
+	tmp := tmpdir(t)
+	defer os.RemoveAll(tmp)
+	db, err := Init(tmp, "refs/heads/test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if db == nil {
+		t.Fatal("db was nil after init")
+	}
+
+	db2, err := Open(tmp, "refs/heads/test", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if db2 == nil {
+		t.Fatal("db was nil after init")
+	}
+
+	_, err = Open("/nonexistentpath", "refs/heads/test", "", false)
+
+	if err == nil {
+		t.Fatal("Opening nonexistent path without forceInit did not yield an error")
+	}
+
+	tmp2 := tmpdir(t)
+	defer os.RemoveAll(tmp2)
+
+	_, err = Open(tmp2, "refs/heads/test", "", true)
+
+	if _, err := os.Stat(path.Join(tmp2, "refs")); err != nil {
+		t.Fatal(fmt.Sprintf("tmpdir %s was not initialized with forceInit true", tmp2))
+	}
+}
+
 func TestSetEmpty(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
