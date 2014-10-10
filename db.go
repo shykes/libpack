@@ -26,6 +26,10 @@ type DB struct {
 	l      sync.RWMutex
 }
 
+// Scope restricts the path that can be used for writing content. Several
+// strings are composed to make a path similar to filepath.Join().
+//
+// Multiple calls to Scope will replace the scope, not append to it.
 func (db *DB) Scope(scope ...string) *DB {
 	// FIXME: do we risk duplicate db.repo.Free()?
 	newScope := []string{db.scope}
