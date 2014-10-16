@@ -17,6 +17,10 @@ func (db *DB) SetAnnotation(name, value string) error {
 	return db.Set(MkAnnotation(name), value)
 }
 
+func (db *DB) DeleteAnnotation(name string) error {
+	return db.Delete(MkAnnotation(name))
+}
+
 func (db *DB) WalkAnnotations(h func(name, value string)) error {
 	return db.Walk("/", func(k string, obj git.Object) error {
 		blob, isBlob := obj.(*git.Blob)
@@ -50,8 +54,14 @@ func ParseAnnotation(annot string) (target string, err error) {
 	if err != nil {
 		return "", err
 	}
+
+	if int(lvl) == 0 {
+		return "", nil
+	}
+
 	if len(parts)-1 != int(lvl) {
 		return "", fmt.Errorf("invalid annotation path")
 	}
+
 	return path.Join(parts[1:]...), nil
 }
