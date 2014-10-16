@@ -9,15 +9,15 @@ import (
 	git "github.com/libgit2/git2go"
 )
 
-func getAnnotation(db *DB, name string) (string, error) {
+func (db *DB) GetAnnotation(name string) (string, error) {
 	return db.Get(MkAnnotation(name))
 }
 
-func setAnnotation(db *DB, name, value string) error {
+func (db *DB) SetAnnotation(name, value string) error {
 	return db.Set(MkAnnotation(name), value)
 }
 
-func walkAnnotations(db *DB, h func(name, value string)) error {
+func (db *DB) WalkAnnotations(h func(name, value string)) error {
 	return db.Walk("/", func(k string, obj git.Object) error {
 		blob, isBlob := obj.(*git.Blob)
 		if !isBlob {
