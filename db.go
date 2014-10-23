@@ -423,7 +423,7 @@ func (db *DB) Pull(url, ref string) error {
 		return err
 	}
 	defer remote.Free()
-	if err := remote.Fetch(nil, fmt.Sprintf("libpack.pull %s %s", url, refspec)); err != nil {
+	if err := remote.Fetch(nil, nil, fmt.Sprintf("libpack.pull %s %s", url, refspec)); err != nil {
 		return err
 	}
 	return db.Update()
