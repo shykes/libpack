@@ -4,10 +4,106 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
+	"strings"
 
 	git "github.com/libgit2/git2go"
 )
+
+type Tree struct {
+	*git.Tree
+	r *git.Repository
+}
+
+type Value interface {
+	IfString(func(string)) error
+	IfTree(func(*Tree)) error
+}
+
+func (t *Tree) Get(key string) (string, error) {
+	if t == nil {
+		return "", os.ErrNotExist
+	}
+	key = TreePath(key)
+	e, err := t.EntryByPath(key)
+	if err != nil {
+		return "", err
+	}
+	blob, err := lookupBlob(t.r, e.Id)
+	if err != nil {
+		return "", err
+	}
+	defer blob.Free()
+	return string(blob.Contents()), nil
+}
+
+func (t *Tree) Set(key, val string) (*Tree, error) {
+	// FIXME: libgit2 crashes if value is empty.
+	// Work around this by shelling out to git.
+	var (
+		id  *git.Oid
+		err error
+	)
+	if val == "" {
+		out, err := exec.Command("git", "--git-dir", t.r.Path(), "hash-object", "-w", "--stdin").Output()
+		if err != nil {
+			return nil, fmt.Errorf("git hash-object: %v", err)
+		}
+		id, err = git.NewOid(strings.Trim(string(out), " \t\r\n"))
+		if err != nil {
+			return nil, fmt.Errorf("git newoid %v", err)
+		}
+	} else {
+		id, err = t.r.CreateBlobFromBuffer([]byte(val))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return t.addGitObj(key, id, true)
+}
+
+func (t *Tree) Mkdir(key string) (*Tree, error) {
+	empty, err := emptyTree(t.r)
+	if err != nil {
+		return nil, err
+	}
+	return t.addGitObj(key, empty, true)
+}
+
+func (t *Tree) Delete(key string) (*Tree, error) {
+	gt, err := treeDel(t.r, t.Tree, key)
+	if err != nil {
+		return nil, err
+	}
+	return &Tree{
+		Tree: gt,
+		r:    t.r,
+	}, nil
+}
+
+func (t *Tree) Diff(other Tree) (added, removed *Tree, err error) {
+	// FIXME
+	return nil, nil, fmt.Errorf("not implemented")
+}
+
+func (t *Tree) Walk(func(key string, entry Value) error) error {
+	return TreeWalk(t.r, t.Tree, "/", func(k string, o git.Object) error {
+		// FIXME: translate to higher-level handler
+		return fmt.Errorf("not implemented")
+	})
+}
+
+func (t *Tree) Add(key string, overlay *Tree, merge bool) (*Tree, error) {
+	return t.addGitObj(key, overlay.Tree.Id(), merge)
+}
+
+func (t *Tree) Substract(key string, whiteout *Tree) (*Tree, error) {
+	// FIXME
+	return nil, fmt.Errorf("not implemented")
+}
+
+// FIXME: port pipeline to Tree
 
 // Removes a key from the tree.
 func treeDel(repo *git.Repository, tree *git.Tree, key string) (*git.Tree, error) {
@@ -42,6 +138,17 @@ func treeDel(repo *git.Repository, tree *git.Tree, key string) (*git.Tree, error
 	}
 
 	return newTree, err
+}
+
+func (t *Tree) addGitObj(key string, valueId *git.Oid, merge bool) (*Tree, error) {
+	gt, err := treeAdd(t.r, t.Tree, key, valueId, merge)
+	if err != nil {
+		return nil, err
+	}
+	return &Tree{
+		Tree: gt,
+		r:    t.r,
+	}, nil
 }
 
 // treeAdd creates a new Git tree by adding a new object
