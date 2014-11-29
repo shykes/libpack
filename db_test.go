@@ -37,7 +37,7 @@ func tmpDB(t *testing.T, ref string) *DB {
 }
 
 func nukeDB(db *DB) {
-	dir := db.Repo().Path()
+	dir := db.r.Path()
 	os.RemoveAll(dir)
 }
 
@@ -119,7 +119,7 @@ func TestPullToUncommitted(t *testing.T) {
 	db1.Commit("just creating some stuff")
 
 	db2.Set("uncommitted-key", "uncommitted value")
-	if err := db2.Pull(db1.Repo().Path(), "refs/heads/test1"); err != nil {
+	if err := db2.Pull(db1.r.Path(), "refs/heads/test1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -138,11 +138,11 @@ func TestPush(t *testing.T) {
 	dst.Set("committed-key", "this should go away")
 	dst.Commit("")
 
-	if err := src.Push(dst.Repo().Path(), "refs/heads/test"); err != nil {
+	if err := src.Push(dst.r.Path(), "refs/heads/test"); err != nil {
 		t.Fatal(err)
 	}
 
-	dst2, _ := Open(dst.Repo().Path(), "refs/heads/test")
+	dst2, _ := Open(dst.r.Path(), "refs/heads/test")
 	assertGet(t, dst2, "foo/bar/baz", "hello world")
 	assertNotExist(t, dst2, "committed-key")
 }
@@ -218,7 +218,7 @@ func TestScopeTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	TreeDump(db.repo, tree, "/", &buf)
+	treeDump(db.repo, tree, "/", &buf)
 	if s := buf.String(); s != "hello = world\n" {
 		t.Fatalf("%v", s)
 	}
@@ -346,7 +346,7 @@ func TestSetGetMultiple(t *testing.T) {
 func TestCommitConcurrentNoConflict(t *testing.T) {
 	db1 := tmpDB(t, "")
 	defer nukeDB(db1)
-	db2, _ := Open(db1.Repo().Path(), db1.ref)
+	db2, _ := Open(db1.r.Path(), db1.ref)
 
 	db1.Set("foo", "A")
 	db2.Set("bar", "B")
@@ -362,7 +362,7 @@ func TestCommitConcurrentNoConflict(t *testing.T) {
 		t.Fatalf("%#v", err)
 	}
 
-	db3, _ := Open(db1.Repo().Path(), db1.ref)
+	db3, _ := Open(db1.r.Path(), db1.ref)
 	assertGet(t, db3, "foo", "A")
 	assertGet(t, db3, "bar", "B")
 }
@@ -370,7 +370,7 @@ func TestCommitConcurrentNoConflict(t *testing.T) {
 func TestCommitConcurrentWithConflict(t *testing.T) {
 	db1 := tmpDB(t, "")
 	defer nukeDB(db1)
-	db2, _ := Open(db1.Repo().Path(), db1.ref)
+	db2, _ := Open(db1.r.Path(), db1.ref)
 
 	db1.Set("foo", "A")
 	db2.Set("foo", "B")
@@ -388,7 +388,7 @@ func TestCommitConcurrentWithConflict(t *testing.T) {
 		t.Fatalf("%#v", err)
 	}
 
-	db3, err := Open(db1.Repo().Path(), db1.ref)
+	db3, err := Open(db1.r.Path(), db1.ref)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +413,7 @@ func TestSetCommitGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	var err error
-	db, err = Init(db.Repo().Path(), "refs/heads/test")
+	db, err = Init(db.r.Path(), "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +613,7 @@ func TestPullToEmpty(t *testing.T) {
 	db1.Mkdir("/etc/something")
 	db1.Commit("just creating some stuff")
 
-	if err := db2.Pull(db1.Repo().Path(), "refs/heads/test1"); err != nil {
+	if err := db2.Pull(db1.r.Path(), "refs/heads/test1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -643,7 +643,7 @@ func TestUpdate(t *testing.T) {
 func TestUpdateWithChanges(t *testing.T) {
 	db1 := tmpDB(t, "refs/heads/test")
 	defer nukeDB(db1)
-	db2, err := Open(db1.Repo().Path(), "refs/heads/test")
+	db2, err := Open(db1.r.Path(), "refs/heads/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,7 +676,7 @@ func TestAddDB(t *testing.T) {
 	db1 := tmpDB(t, "refs/heads/db1")
 	defer nukeDB(db1)
 
-	db2, err := Open(db1.Repo().Path(), "refs/heads/db2")
+	db2, err := Open(db1.r.Path(), "refs/heads/db2")
 	if err != nil {
 		t.Fatal(err)
 	}

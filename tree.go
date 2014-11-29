@@ -23,7 +23,7 @@ type Value interface {
 	IfTree(func(*Tree)) error
 }
 
-func TreeFromGit(r *git.Repository, id *git.Oid) (*Tree, error) {
+func treeFromGit(r *git.Repository, id *git.Oid) (*Tree, error) {
 	gt, err := lookupTree(r, id)
 	if err == nil {
 		return &Tree{
@@ -143,7 +143,7 @@ func (t *Tree) Diff(other Tree) (added, removed *Tree, err error) {
 type WalkHandler func(string, Value) error
 
 func (t *Tree) Walk(h WalkHandler) error {
-	return TreeWalk(t.r, t.Tree, "/", func(k string, o git.Object) error {
+	return treeWalk(t.r, t.Tree, "/", func(k string, o git.Object) error {
 		// FIXME: translate to higher-level handler
 		return fmt.Errorf("not implemented")
 	})
@@ -159,7 +159,7 @@ func (t *Tree) Substract(key string, whiteout *Tree) (*Tree, error) {
 }
 
 func (t *Tree) Scope(key string) (*Tree, error) {
-	gt, err := TreeScope(t.r, t.Tree, key)
+	gt, err := treeScope(t.r, t.Tree, key)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (t *Tree) Scope(key string) (*Tree, error) {
 }
 
 func (t *Tree) Dump(dst io.Writer) error {
-	return TreeDump(t.r, t.Tree, "/", dst)
+	return treeDump(t.r, t.Tree, "/", dst)
 }
 
 // Checkout populates the directory at dir with the contents of the tree.

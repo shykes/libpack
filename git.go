@@ -3,7 +3,6 @@ package libpack
 import (
 	"fmt"
 	"io"
-	"os"
 	"path"
 	"time"
 
@@ -18,7 +17,7 @@ func treeDel(repo *git.Repository, tree *git.Tree, key string) (*git.Tree, error
 	base, leaf := path.Split(key)
 
 	if tree != nil {
-		if tree, err = TreeScope(repo, tree, base); err != nil {
+		if tree, err = treeScope(repo, tree, base); err != nil {
 			return nil, err
 		}
 	}
@@ -131,7 +130,7 @@ func treeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid,
 		var subTree *git.Tree
 		var oldSubTree *git.Tree
 		if tree != nil {
-			oldSubTree, err = TreeScope(repo, tree, leaf)
+			oldSubTree, err = treeScope(repo, tree, leaf)
 			// FIXME: distinguish "no such key" error (which
 			// FIXME: distinguish a non-existing previous tree (continue with oldTree==nil)
 			// from other errors (abort and return an error)
@@ -178,49 +177,11 @@ func treeAdd(repo *git.Repository, tree *git.Tree, key string, valueId *git.Oid,
 	return treeAdd(repo, tree, base, subtree.Id(), merge)
 }
 
-func TreeGet(r *git.Repository, t *git.Tree, key string) (string, error) {
-	if t == nil {
-		return "", os.ErrNotExist
-	}
-	key = TreePath(key)
-	e, err := t.EntryByPath(key)
-	if err != nil {
-		return "", err
-	}
-	blob, err := lookupBlob(r, e.Id)
-	if err != nil {
-		return "", err
-	}
-	defer blob.Free()
-	return string(blob.Contents()), nil
-
-}
-
-func TreeList(r *git.Repository, t *git.Tree, key string) ([]string, error) {
-	if t == nil {
-		return []string{}, nil
-	}
-	subtree, err := TreeScope(r, t, key)
-	if err != nil {
-		return nil, err
-	}
-	defer subtree.Free()
-	var (
-		i     uint64
-		count uint64 = subtree.EntryCount()
-	)
-	entries := make([]string, 0, count)
-	for i = 0; i < count; i++ {
-		entries = append(entries, subtree.EntryByIndex(i).Name)
-	}
-	return entries, nil
-}
-
-func TreeWalk(r *git.Repository, t *git.Tree, key string, h func(string, git.Object) error) error {
+func treeWalk(r *git.Repository, t *git.Tree, key string, h func(string, git.Object) error) error {
 	if t == nil {
 		return fmt.Errorf("no tree to walk")
 	}
-	subtree, err := TreeScope(r, t, key)
+	subtree, err := treeScope(r, t, key)
 	if err != nil {
 		return err
 	}
@@ -247,8 +208,8 @@ func TreeWalk(r *git.Repository, t *git.Tree, key string, h func(string, git.Obj
 	return nil
 }
 
-func TreeDump(r *git.Repository, t *git.Tree, key string, dst io.Writer) error {
-	return TreeWalk(r, t, key, func(key string, obj git.Object) error {
+func treeDump(r *git.Repository, t *git.Tree, key string, dst io.Writer) error {
+	return treeWalk(r, t, key, func(key string, obj git.Object) error {
 		if _, isTree := obj.(*git.Tree); isTree {
 			fmt.Fprintf(dst, "%s/\n", key)
 		} else if blob, isBlob := obj.(*git.Blob); isBlob {
@@ -258,7 +219,7 @@ func TreeDump(r *git.Repository, t *git.Tree, key string, dst io.Writer) error {
 	})
 }
 
-func TreeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
+func treeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, error) {
 	if tree == nil {
 		return nil, fmt.Errorf("tree undefined")
 	}
@@ -275,7 +236,11 @@ func TreeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, er
 	return lookupTree(repo, entry.Id)
 }
 
-func CommitToRef(r *git.Repository, tree *git.Tree, parent *git.Commit, refname, msg string) (*git.Commit, error) {
+// commitToRef creates a new commit object from the specified parent commit, content tree,
+// message and repository.
+// It updates the value of `refname` to point to the new commit, or returns an error if that
+// fails.
+func commitToRef(r *git.Repository, tree *git.Tree, parent *git.Commit, refname, msg string) (*git.Commit, error) {
 	// Retry loop in case of conflict
 	// FIXME: use a custom inter-process lock as a first attempt for performance
 	var (

@@ -67,16 +67,12 @@ func (db *DB) Free() {
 	db.r.Free()
 }
 
-func (db *DB) Repo() *git.Repository {
-	return db.r
-}
-
 func (db *DB) Get() (*Tree, error) {
 	head, err := db.head()
 	if err != nil {
 		return nil, err
 	}
-	return TreeFromGit(db.r, head.Id())
+	return treeFromGit(db.r, head.Id())
 }
 
 func (db *DB) head() (*git.Commit, error) {
@@ -100,7 +96,7 @@ func (db *DB) Commit(t *Tree, msg string) (*Tree, error) {
 	if err != nil {
 		return nil, err
 	}
-	commit, err := CommitToRef(db.r, t.Tree, head, db.ref, msg)
+	commit, err := commitToRef(db.r, t.Tree, head, db.ref, msg)
 	if err != nil {
 		return nil, err
 	}
