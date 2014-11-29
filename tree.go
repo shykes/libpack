@@ -153,7 +153,7 @@ func (t *Tree) Add(key string, overlay *Tree, merge bool) (*Tree, error) {
 	return t.addGitObj(key, overlay.Tree.Id(), merge)
 }
 
-func (t *Tree) Substract(key string, whiteout *Tree) (*Tree, error) {
+func (t *Tree) Subtract(key string, whiteout *Tree) (*Tree, error) {
 	// FIXME
 	return nil, fmt.Errorf("not implemented")
 }
