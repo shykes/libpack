@@ -1,7 +1,6 @@
 package libpack
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -33,66 +32,6 @@ func TestParseAnnotation(t *testing.T) {
 			}
 		} else {
 			t.Fatal(err)
-		}
-	}
-}
-
-func TestGetSetDeleteAnnotations(t *testing.T) {
-	db := tmpDB(t, "")
-	defer nukeDB(db)
-
-	if err := db.SetAnnotation("/one", "tmp"); err != nil {
-		t.Fatal(err)
-	}
-
-	if str, err := db.GetAnnotation("/one"); err != nil {
-		t.Fatal(err)
-	} else if str != "tmp" {
-		t.Fatalf("annotation for /one did not equal 'tmp': %q", str)
-	}
-
-	if err := db.DeleteAnnotation("/one"); err != nil {
-		t.Fatal(err)
-	}
-
-	if str, err := db.GetAnnotation("/one"); err == nil || str != "" {
-		t.Fatalf("annotation /one still has content: %q", str)
-	}
-}
-
-func TestWalkAnnotations(t *testing.T) {
-	db := tmpDB(t, "")
-
-	// ideally, this structure should enforce the deterministic nature of
-	// WalkAnnotations.
-	resultMap := [][][]string{
-		{{"/one"}, {"one"}},
-		{{"/one", "/one/two"}, {"one", "one/two"}},
-	}
-
-	for _, list := range resultMap {
-		for _, path := range list[0] {
-			if err := db.SetAnnotation(path, "tmp"); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		results := []string{}
-
-		if err := db.WalkAnnotations(func(name, value string) { results = append(results, name) }); err != nil {
-			t.Fatal(err)
-		}
-
-		fmt.Println(results)
-
-		if len(results) != len(list[1]) {
-			t.Fatalf("expected list (%d) has different size than produced list (%d)", len(list[1]), len(results))
-		}
-
-		for i, result := range results {
-			if list[1][i] != result {
-				t.Fatalf("expected annotation %q does not equal result %q", list[1][i], result)
-			}
 		}
 	}
 }
