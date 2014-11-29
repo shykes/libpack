@@ -1,8 +1,10 @@
 package libpack
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -19,6 +21,28 @@ type Tree struct {
 type Value interface {
 	IfString(func(string)) error
 	IfTree(func(*Tree)) error
+}
+
+func TreeFromGit(r *git.Repository, id *git.Oid) (*Tree, error) {
+	gt, err := lookupTree(r, id)
+	if err == nil {
+		return &Tree{
+			Tree: gt,
+			r:    r,
+		}, nil
+	}
+	gc, err := lookupCommit(r, id)
+	if err == nil {
+		gt, err := gc.Tree()
+		if err != nil {
+			return nil, err
+		}
+		return &Tree{
+			Tree: gt,
+			r:    r,
+		}, nil
+	}
+	return nil, fmt.Errorf("not a valid tree or commit: %s", id)
 }
 
 func (t *Tree) Get(key string) (string, error) {
@@ -63,12 +87,41 @@ func (t *Tree) Set(key, val string) (*Tree, error) {
 	return t.addGitObj(key, id, true)
 }
 
+// SetStream writes the data from `src` to a new Git blob,
+// and updates the uncommitted tree to point to that blob as `key`.
+func (t *Tree) SetStream(key string, src io.Reader) (*Tree, error) {
+	// FIXME: instead of buffering the entire value, use
+	// libgit2 CreateBlobFromChunks to stream the data straight
+	// into git.
+	buf := new(bytes.Buffer)
+	_, err := io.Copy(buf, src)
+	if err != nil {
+		return nil, err
+	}
+	return t.Set(key, buf.String())
+}
+
 func (t *Tree) Mkdir(key string) (*Tree, error) {
 	empty, err := emptyTree(t.r)
 	if err != nil {
 		return nil, err
 	}
 	return t.addGitObj(key, empty, true)
+}
+
+func (t *Tree) Empty() (*Tree, error) {
+	id, err := emptyTree(t.r)
+	if err != nil {
+		return nil, err
+	}
+	gt, err := lookupTree(t.r, id)
+	if err != nil {
+		return nil, err
+	}
+	return &Tree{
+		Tree: gt,
+		r:    t.r,
+	}, nil
 }
 
 func (t *Tree) Delete(key string) (*Tree, error) {
@@ -87,7 +140,9 @@ func (t *Tree) Diff(other Tree) (added, removed *Tree, err error) {
 	return nil, nil, fmt.Errorf("not implemented")
 }
 
-func (t *Tree) Walk(func(key string, entry Value) error) error {
+type WalkHandler func(string, Value) error
+
+func (t *Tree) Walk(h WalkHandler) error {
 	return TreeWalk(t.r, t.Tree, "/", func(k string, o git.Object) error {
 		// FIXME: translate to higher-level handler
 		return fmt.Errorf("not implemented")
@@ -101,6 +156,86 @@ func (t *Tree) Add(key string, overlay *Tree, merge bool) (*Tree, error) {
 func (t *Tree) Substract(key string, whiteout *Tree) (*Tree, error) {
 	// FIXME
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (t *Tree) Scope(key string) (*Tree, error) {
+	gt, err := TreeScope(t.r, t.Tree, key)
+	if err != nil {
+		return nil, err
+	}
+	return &Tree{
+		Tree: gt,
+		r:    t.r,
+	}, nil
+}
+
+func (t *Tree) Dump(dst io.Writer) error {
+	return TreeDump(t.r, t.Tree, "/", dst)
+}
+
+// Checkout populates the directory at dir with the contents of the tree.
+//
+// As a convenience, if dir is an empty string, a temporary directory
+// is created and returned, and the caller is responsible for removing it.
+//
+// FIXME: this does not work properly at the moment.
+//
+func (t *Tree) Checkout(dir string) (checkoutDir string, err error) {
+	// If the tree is empty, checkout will fail and there is
+	// nothing to do anyway
+	if t.EntryCount() == 0 {
+		return "", nil
+	}
+	idx, err := ioutil.TempFile("", "libpack-index")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(idx.Name())
+	readTree := exec.Command(
+		"git",
+		"--git-dir", t.r.Path(),
+		"--work-tree", dir,
+		"read-tree", t.Tree.Id().String(),
+	)
+	readTree.Env = append(readTree.Env, "GIT_INDEX_FILE="+idx.Name())
+	stderr := new(bytes.Buffer)
+	readTree.Stderr = stderr
+	if err := readTree.Run(); err != nil {
+		return "", fmt.Errorf("%s", stderr.String())
+	}
+	checkoutIndex := exec.Command(
+		"git",
+		"--git-dir", t.r.Path(),
+		"--work-tree", dir,
+		"checkout-index",
+	)
+	checkoutIndex.Env = append(checkoutIndex.Env, "GIT_INDEX_FILE="+idx.Name())
+	stderr = new(bytes.Buffer)
+	checkoutIndex.Stderr = stderr
+	if err := checkoutIndex.Run(); err != nil {
+		return "", fmt.Errorf("%s", stderr.String())
+	}
+	return "", nil
+}
+
+// ExecInCheckout checks out the committed contents of the database into a
+// temporary directory, executes the specified command in a new subprocess
+// with that directory as the working directory, then removes the directory.
+//
+// The standard input, output and error streams of the command are the same
+// as the current process's.
+func (t *Tree) ExecInCheckout(path string, args ...string) error {
+	checkout, err := t.Checkout("")
+	if err != nil {
+		return fmt.Errorf("checkout: %v", err)
+	}
+	defer os.RemoveAll(checkout)
+	cmd := exec.Command(path, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = checkout
+	return cmd.Run()
 }
 
 // FIXME: port pipeline to Tree
@@ -138,6 +273,12 @@ func treeDel(repo *git.Repository, tree *git.Tree, key string) (*git.Tree, error
 	}
 
 	return newTree, err
+}
+
+func (t *Tree) Pipeline() *Pipeline {
+	return &Pipeline{
+		op: OpNop,
+	}
 }
 
 func (t *Tree) addGitObj(key string, valueId *git.Oid, merge bool) (*Tree, error) {
@@ -379,4 +520,15 @@ func TreeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, er
 		return nil, err
 	}
 	return lookupTree(repo, entry.Id)
+}
+
+func TreePath(p string) string {
+	p = path.Clean(p)
+	if p == "/" || p == "." {
+		return "/"
+	}
+	// Remove leading / from the path
+	// as libgit2.TreeEntryByPath does not accept it
+	p = strings.TrimLeft(p, "/")
+	return p
 }

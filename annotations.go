@@ -5,36 +5,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
-
-	git "github.com/libgit2/git2go"
 )
-
-func (db *DB) GetAnnotation(name string) (string, error) {
-	return db.Get(MkAnnotation(name))
-}
-
-func (db *DB) SetAnnotation(name, value string) error {
-	return db.Set(MkAnnotation(name), value)
-}
-
-func (db *DB) DeleteAnnotation(name string) error {
-	return db.Delete(MkAnnotation(name))
-}
-
-func (db *DB) WalkAnnotations(h func(name, value string)) error {
-	return db.Walk("/", func(k string, obj git.Object) error {
-		blob, isBlob := obj.(*git.Blob)
-		if !isBlob {
-			return nil
-		}
-		targetPath, err := ParseAnnotation(k)
-		if err != nil {
-			return err
-		}
-		h(targetPath, string(blob.Contents()))
-		return nil
-	})
-}
 
 func MkAnnotation(target string) string {
 	target = TreePath(target)

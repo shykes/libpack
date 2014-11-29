@@ -7,8 +7,6 @@ import (
 	"os"
 	"path"
 
-	git "github.com/libgit2/git2go"
-
 	"github.com/docker/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
 
@@ -19,13 +17,13 @@ const (
 
 // GetTar generates a tar stream frmo the contents of db, and streams
 // it to `dst`.
-func (db *DB) GetTar(dst io.Writer) error {
+func (t *Tree) GetTar(dst io.Writer) error {
 	tw := tar.NewWriter(dst)
 	defer tw.Close()
 	// Walk the data tree
-	return db.Walk(DataTree, func(name string, obj git.Object) error {
+	_, err := t.Pipeline().Scope(DataTree).Walk(func(name string, obj Value) error {
 		fmt.Fprintf(os.Stderr, "Generating tar entry for '%s'...\n", name)
-		metaBlob, err := db.Get(metaPath(name))
+		metaBlob, err := t.Get(metaPath(name))
 		if err != nil {
 			return err
 		}
@@ -38,21 +36,23 @@ func (db *DB) GetTar(dst io.Writer) error {
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-		if blob, isBlob := obj.(*git.Blob); isBlob {
+		obj.IfString(func(blob string) {
 			fmt.Fprintf(os.Stderr, "--> writing %d bytes for blob %s\n", hdr.Size, hdr.Name)
-			if _, err := tw.Write(blob.Contents()[:hdr.Size]); err != nil {
-				return err
+			if _, err := tw.Write([]byte(blob[:hdr.Size])); err != nil {
+				// FIXME pass error if IfString
+				return
 			}
-		}
+		})
 		return nil
-	})
-	return nil
+	}).Run()
+	return err
 }
 
 // SetTar adds data to db from a tar strema decoded from `src`.
 // Raw data is stored at the key `_fs_data/', and metadata in a
 // separate key '_fs_metadata'.
-func (db *DB) SetTar(src io.Reader) error {
+func (t *Tree) SetTar(src io.Reader) (*Tree, error) {
+	out := t
 	tr := tar.NewReader(src)
 	for {
 		hdr, err := tr.Next()
@@ -60,26 +60,28 @@ func (db *DB) SetTar(src io.Reader) error {
 			break
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		fmt.Printf("[META] %s\n", hdr.Name)
 		metaBlob, err := headerReader(hdr)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		fmt.Printf("    ---> storing metadata in %s\n", metaPath(hdr.Name))
-		if err := db.SetStream(metaPath(hdr.Name), metaBlob); err != nil {
+		out, err = out.SetStream(metaPath(hdr.Name), metaBlob)
+		if err != nil {
 			continue
 		}
 		// FIXME: git can carry symlinks as well
 		if hdr.Typeflag == tar.TypeReg {
 			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
-			if err := db.SetStream(path.Join("_fs_data", hdr.Name), tr); err != nil {
+			out, err = out.SetStream(path.Join("_fs_data", hdr.Name), tr)
+			if err != nil {
 				continue
 			}
 		}
 	}
-	return nil
+	return out, nil
 }
 
 // metaPath computes a path at which the metadata can be stored for a given path.
