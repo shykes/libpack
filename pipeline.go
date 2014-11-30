@@ -54,6 +54,10 @@ func (t *Pipeline) Set(key, value string) *Pipeline {
 	return t.setPrev(OpSet, []string{key, value})
 }
 
+func (t *Pipeline) Empty() *Pipeline {
+	return t.setPrev(OpEmpty, nil)
+}
+
 // Add appends a new `add` instruction to a pipeline, and
 // returns the new combined pipeline.
 // `add` inserts a git object in the input tree, at the pat 'key'.
