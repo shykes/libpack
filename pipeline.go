@@ -59,6 +59,8 @@ const (
 	OpDelete
 	OpWalk
 	OpDump
+	OpAssertEq
+	OpAssertNotExist
 )
 
 func (t *Pipeline) OnRun(run PipelineHandler) *Pipeline {
@@ -120,6 +122,14 @@ func (t *Pipeline) Mkdir(key string) *Pipeline {
 
 func (t *Pipeline) Scope(key string) *Pipeline {
 	return t.setPrev(OpScope, key)
+}
+
+func (t *Pipeline) AssertEq(key, val string) *Pipeline {
+	return t.setPrev(OpAssertEq, [2]string{key, val})
+}
+
+func (t *Pipeline) AssertNotExist(key string) *Pipeline {
+	return t.setPrev(OpAssertNotExist, key)
 }
 
 // Run runs each step of the pipeline in sequence, each time passing
@@ -221,6 +231,37 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 				return nil, fmt.Errorf("invalid argument: %v", t.arg)
 			}
 			return in, in.Dump(dst)
+		}
+	case OpAssertEq:
+		{
+			kv, ok := t.arg.([]string)
+			if !ok {
+				return nil, fmt.Errorf("invalid argument")
+			}
+			if len(kv) != 2 {
+				return nil, fmt.Errorf("invalid argument")
+			}
+			val, err := in.Get(kv[0])
+			if err != nil {
+				return nil, err
+			}
+			if val != kv[1] {
+				return nil, fmt.Errorf("assertion failed: '%v == %v'", val, kv[1])
+			}
+			return in, nil
+		}
+	case OpAssertNotExist:
+		{
+			key, ok := t.arg.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid argument")
+			}
+			_, err := in.Get(key)
+			if err == nil {
+				return nil, fmt.Errorf("assertion failed: '%s is not set'", key)
+			}
+			// FIXME: distinguish IsNotExist and other errors
+			return in, nil
 		}
 	}
 	return nil, fmt.Errorf("invalid op: %v", t.op)
