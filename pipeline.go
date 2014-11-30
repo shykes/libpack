@@ -6,7 +6,7 @@ import (
 )
 
 // A Pipeline defines a sequence of operations which can be run
-// to produce a Git Tree.
+// to produce a libpack object.
 // Pipelines make it easy to assemble trees of arbitrary complexity
 // with relatively few lines of code.
 // For example:
@@ -22,7 +22,7 @@ import (
 //
 type Pipeline struct {
 	prev *Pipeline
-	op   TreeOp
+	op   Op
 	arg  interface{}
 }
 
@@ -35,11 +35,11 @@ type addArg struct {
 type walkArg WalkHandler
 type dumpArg io.Writer
 
-// A TreeOp defines an individual operation operation in a pipeline.
-type TreeOp int
+// An Op defines an individual operation in a pipeline.
+type Op int
 
 const (
-	OpEmpty TreeOp = iota
+	OpEmpty Op = iota
 	OpNop
 	OpSet
 	OpMkdir
@@ -179,7 +179,7 @@ func (t *Pipeline) Run() (*Tree, error) {
 		{
 			key, ok := t.arg.(string)
 			if !ok {
-				return nil, fmt.Errorf("mkdir: invalid argument: %v", t.arg)
+				return nil, fmt.Errorf("invalid argument: %v", t.arg)
 			}
 			return in.Scope(key)
 		}
@@ -187,7 +187,7 @@ func (t *Pipeline) Run() (*Tree, error) {
 		{
 			h, ok := t.arg.(walkArg)
 			if !ok {
-				return nil, fmt.Errorf("mkdir: invalid argument: %v", t.arg)
+				return nil, fmt.Errorf("invalid argument: %v", t.arg)
 			}
 			return in, in.Walk(WalkHandler(h))
 		}
@@ -203,7 +203,7 @@ func (t *Pipeline) Run() (*Tree, error) {
 	return nil, fmt.Errorf("invalid op: %v", t.op)
 }
 
-func (t *Pipeline) setPrev(op TreeOp, arg interface{}) *Pipeline {
+func (t *Pipeline) setPrev(op Op, arg interface{}) *Pipeline {
 	return &Pipeline{
 		prev: t,
 		op:   op,
