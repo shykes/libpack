@@ -27,7 +27,7 @@ type Pipeline struct {
 
 type addArg struct {
 	key     string
-	overlay *Tree
+	overlay interface{}
 	merge   bool
 }
 
@@ -65,7 +65,7 @@ func (t *Pipeline) Empty() *Pipeline {
 //  - git.Object: the specified object is added
 //  - *git.Oid: the object at the specified ID is added
 //  - *Pipeline: the specified pipeline is run, and the result is added
-func (t *Pipeline) Add(key string, overlay *Tree, merge bool) *Pipeline {
+func (t *Pipeline) Add(key string, overlay interface{}, merge bool) *Pipeline {
 	return t.setPrev(OpAdd, &addArg{
 		key:     key,
 		overlay: overlay,
@@ -125,7 +125,19 @@ func (t *Pipeline) Run() (*Tree, error) {
 			if !ok {
 				return nil, fmt.Errorf("add: invalid argument: %v", t.arg)
 			}
-			return in.Add(arg.key, arg.overlay, arg.merge)
+			switch overlay := arg.overlay.(type) {
+				case *Tree: {
+					return in.Add(arg.key, overlay, arg.merge)
+				}
+				case *Pipeline: {
+					out, err := overlay.Run()
+					if err != nil {
+						return nil, err
+					}
+					return in.Add(arg.key, out, arg.merge)
+				}
+			}
+			return nil, fmt.Errorf("invalid overlay argument to add: %#v", arg.overlay)
 		}
 	case OpDelete:
 		{
