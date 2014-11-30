@@ -227,7 +227,7 @@ func (t *Tree) ExecInCheckout(path string, args ...string) error {
 }
 
 func (t *Tree) Pipeline() *Pipeline {
-	return NewPipeline().Add("/", t, false)
+	return NewPipeline(t.r).Add("/", t, false)
 }
 
 func (t *Tree) addGitObj(key string, hash string, merge bool) (*Tree, error) {

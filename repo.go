@@ -101,6 +101,55 @@ func (r *Repository) TreeById(tid string) (*Tree, error) {
 
 }
 
+// Pull downloads objects at the specified url and remote ref name,
+// and updates the local ref of db.
+// The uncommitted tree is left unchanged (ie uncommitted changes are
+// not merged or rebased).
+func (r *Repository) Pull(url, fromref, toref string) error {
+	if fromref == "" {
+		fromref = toref
+	}
+	refspec := fmt.Sprintf("%s:%s", fromref, toref)
+	fmt.Printf("Creating anonymous remote url=%s refspec=%s\n", url, refspec)
+	remote, err := r.gr.CreateAnonymousRemote(url, refspec)
+	if err != nil {
+		return err
+	}
+	defer remote.Free()
+	if err := remote.Fetch(nil, nil, fmt.Sprintf("libpack.pull %s %s", url, refspec)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Push uploads the committed contents of the repository at the specified url and
+// remote ref name. The remote ref is created if it doesn't exist.
+func (r *Repository) Push(url, fromref, toref string) error {
+	if toref == "" {
+		toref = fromref
+	}
+	// The '+' prefix sets force=true,
+	// so the remote ref is created if it doesn't exist.
+	refspec := fmt.Sprintf("+%s:%s", fromref, toref)
+	remote, err := r.gr.CreateAnonymousRemote(url, refspec)
+	if err != nil {
+		return err
+	}
+	defer remote.Free()
+	push, err := remote.NewPush()
+	if err != nil {
+		return fmt.Errorf("git_push_new: %v", err)
+	}
+	defer push.Free()
+	if err := push.AddRefspec(refspec); err != nil {
+		return fmt.Errorf("git_push_refspec_add: %v", err)
+	}
+	if err := push.Finish(); err != nil {
+		return fmt.Errorf("git_push_finish: %v", err)
+	}
+	return nil
+}
+
 // Free must be called to release resources when a repository is no longer
 // in use.
 // This is required in addition to Golang garbage collection, because

@@ -21,6 +21,7 @@ import (
 //   combotree, _ := p2.Run()
 //
 type Pipeline struct {
+	r    *Repository // needed for Empty() when there is no input
 	prev *Pipeline
 	op   Op
 	arg  interface{}
@@ -29,8 +30,9 @@ type Pipeline struct {
 
 type PipelineHandler func(*Pipeline) (*Tree, error)
 
-func NewPipeline() *Pipeline {
+func NewPipeline(r *Repository) *Pipeline {
 	return &Pipeline{
+		r:  r,
 		op: OpNop,
 	}
 }
@@ -141,7 +143,7 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 	switch t.op {
 	case OpEmpty:
 		{
-			return in.Empty()
+			return t.r.EmptyTree()
 		}
 	case OpNop:
 		{

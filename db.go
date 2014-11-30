@@ -2,19 +2,80 @@ package libpack
 
 import (
 	"fmt"
+	"io"
 	"sync"
-
-	git "github.com/libgit2/git2go"
 )
 
-// DB is a simple git-backed database.
 type DB struct {
 	r   *Repository
 	ref string
 	l   sync.RWMutex
 }
 
-func (db *DB) Get() (*Tree, error) {
+func (db *DB) Name() string {
+	return db.ref
+}
+
+// Conveniences to query the underlying tree without explicitly
+// fetching it first every time.
+//
+// DB.Get() is equivalent to DB.Tree().Get(), etc.
+
+func (db *DB) Get(key string) (string, error) {
+	t, err := db.Query().Run()
+	if err != nil {
+		return "", err
+	}
+	return t.Get(key)
+}
+
+func (db *DB) List(key string) ([]string, error) {
+	t, err := db.Query().Run()
+	if err != nil {
+		return nil, err
+	}
+	return t.List(key)
+}
+
+func (db *DB) Dump(dst io.Writer) error {
+	_, err := db.Query().Dump(dst).Run()
+	return err
+}
+
+// Conveniences for basic write operations with (Set, Mkdir, Delete).
+// These conveniences have auto-commit behavior. They are built on
+// throwaway transactions under the hood.
+//
+// For the full power of transactions, use DB.Transaction instead
+
+func (db *DB) Set(key, val string) (*Tree, error) {
+	return db.Transaction().Set(key, val).Run()
+}
+
+func (db *DB) Mkdir(key string) (*Tree, error) {
+	return db.Transaction().Mkdir(key).Run()
+}
+
+func (db *DB) Delete(key string) (*Tree, error) {
+	return db.Transaction().Delete(key).Run()
+}
+
+// A transaction is just a Pipeline with some glue to commit
+// after a successful run. In other words: tree.go and pipeline.go
+// do all the glue work for us. And git does all the really hard work.
+// It feels good to be the top of the stack.
+
+func (db *DB) Transaction() *Pipeline {
+	return db.pipeline(true)
+}
+
+// A Query is just a pipeline which *does not* commit at the end.
+
+func (db *DB) Query() *Pipeline {
+	return db.pipeline(false)
+}
+
+func (db *DB) getTree() (*Tree, error) {
 	head, err := gitCommitFromRef(db.r.gr, db.ref)
 	if err != nil {
 		return nil, err
@@ -22,20 +83,19 @@ func (db *DB) Get() (*Tree, error) {
 	return db.r.TreeById(head.Id().String())
 }
 
-func (db *DB) Watch() (*Tree, chan *Tree, error) {
-	// FIXME
-	return nil, nil, fmt.Errorf("not implemented")
-}
-
-func (db *DB) Commit(t *Tree, msg string) (*Tree, error) {
-	if t == nil {
-		return t, nil
-	}
+func (db *DB) setTree(t *Tree, old **Tree) (*Tree, error) {
 	head, err := gitCommitFromRef(db.r.gr, db.ref)
 	if err != nil {
 		return nil, err
 	}
-	commit, err := commitToRef(db.r.gr, t.Tree, head, db.ref, msg)
+	if old != nil {
+		// Return the previous tree as a convenience for conflict management.
+		*old, err = db.r.TreeById(head.Id().String())
+		if err != nil {
+			return nil, err
+		}
+	}
+	commit, err := commitToRef(db.r.gr, t.Tree, head, db.ref, "")
 	if err != nil {
 		return nil, err
 	}
@@ -43,63 +103,36 @@ func (db *DB) Commit(t *Tree, msg string) (*Tree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Tree{
+	newTree := &Tree{
 		Tree: gt,
-		r:    t.r,
-	}, nil
+		r:    db.r,
+	}
+	if newTree.Hash() != t.Hash() {
+		return newTree, fmt.Errorf("Mismatched hash: %s instead of %s", newTree.Hash(), t.Hash())
+	}
+	return newTree, nil
 }
 
-// Pull downloads objects at the specified url and remote ref name,
-// and updates the local ref of db.
-// The uncommitted tree is left unchanged (ie uncommitted changes are
-// not merged or rebased).
-func (db *DB) Pull(url, ref string) error {
-	if ref == "" {
-		ref = db.ref
-	}
-	refspec := fmt.Sprintf("%s:%s", ref, db.ref)
-	fmt.Printf("Creating anonymous remote url=%s refspec=%s\n", url, refspec)
-	remote, err := db.r.gr.CreateAnonymousRemote(url, refspec)
-	if err != nil {
-		return err
-	}
-	defer remote.Free()
-	if err := remote.Fetch(nil, nil, fmt.Sprintf("libpack.pull %s %s", url, refspec)); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Push uploads the committed contents of the db at the specified url and
-// remote ref name. The remote ref is created if it doesn't exist.
-func (db *DB) Push(url, ref string) error {
-	if ref == "" {
-		ref = db.ref
-	}
-	// The '+' prefix sets force=true,
-	// so the remote ref is created if it doesn't exist.
-	refspec := fmt.Sprintf("+%s:%s", db.ref, ref)
-	remote, err := db.r.gr.CreateAnonymousRemote(url, refspec)
-	if err != nil {
-		return err
-	}
-	defer remote.Free()
-	push, err := remote.NewPush()
-	if err != nil {
-		return fmt.Errorf("git_push_new: %v", err)
-	}
-	defer push.Free()
-	if err := push.AddRefspec(refspec); err != nil {
-		return fmt.Errorf("git_push_refspec_add: %v", err)
-	}
-	if err := push.Finish(); err != nil {
-		return fmt.Errorf("git_push_finish: %v", err)
-	}
-	return nil
-}
-
-// lookupTree looks up an object at hash `id` in `repo`, and returns
-// it as a git tree. If the object is not a tree, an error is returned.
-func (db *DB) lookupTree(id *git.Oid) (*git.Tree, error) {
-	return lookupTree(db.r.gr, id)
+func (db *DB) pipeline(commit bool) *Pipeline {
+	// FIXME: this can be done more cleanly by making Pipeline a linked list
+	// of abstract PipelineStep interfaces.
+	// The builtin steps (Add, Set, Delete etc.) can be added with the same
+	// convenience methods. But another call would allow adding arbitrary
+	// steps (which would be anything implementing the interface)
+	return NewPipeline(db.r).OnRun(func(p *Pipeline) (*Tree, error) {
+		// FIXME: we can add a scope pre-processor here.
+		// Get the current from the db
+		tree, err := db.getTree()
+		if err != nil {
+			return nil, err
+		}
+		// Use that value as the input of the pipeline
+		out, err := concat(tree.Pipeline(), p).Run()
+		// If commit==false, just return the result
+		if !commit {
+			return out, err
+		}
+		// If commit==true, write the result back to the db
+		return db.setTree(out, nil)
+	})
 }
