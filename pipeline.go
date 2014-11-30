@@ -33,7 +33,7 @@ type PipelineHandler func(*Pipeline) (*Tree, error)
 func NewPipeline(r *Repository) *Pipeline {
 	return &Pipeline{
 		r:  r,
-		op: OpNop,
+		op: OpEmpty,
 	}
 }
 
