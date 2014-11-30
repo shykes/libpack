@@ -66,7 +66,7 @@ func (t *Tree) Set(key, val string) (*Tree, error) {
 			return nil, err
 		}
 	}
-	return t.addGitObj(key, id, true)
+	return t.addGitObj(key, id.String(), true)
 }
 
 // SetStream writes the data from `src` to a new Git blob,
@@ -138,7 +138,7 @@ func (t *Tree) Walk(h WalkHandler) error {
 }
 
 func (t *Tree) Add(key string, overlay *Tree, merge bool) (*Tree, error) {
-	return t.addGitObj(key, overlay.Tree.Id(), merge)
+	return t.addGitObj(key, overlay.Hash(), merge)
 }
 
 func (t *Tree) Subtract(key string, whiteout *Tree) (*Tree, error) {
@@ -226,13 +226,15 @@ func (t *Tree) ExecInCheckout(path string, args ...string) error {
 	return cmd.Run()
 }
 
-// FIXME: port pipeline to Tree
-
 func (t *Tree) Pipeline() *Pipeline {
 	return NewPipeline().Add("/", t, false)
 }
 
-func (t *Tree) addGitObj(key string, valueId *git.Oid, merge bool) (*Tree, error) {
+func (t *Tree) addGitObj(key string, hash string, merge bool) (*Tree, error) {
+	valueId, err := git.NewOid(hash)
+	if err != nil {
+		return nil, err
+	}
 	gt, err := treeAdd(t.r.gr, t.Tree, key, valueId, merge)
 	if err != nil {
 		return nil, err
