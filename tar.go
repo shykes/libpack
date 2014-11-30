@@ -1,5 +1,8 @@
 package libpack
 
+/*
+FIXME
+
 import (
 	"bytes"
 	"fmt"
@@ -14,6 +17,7 @@ const (
 	MetaTree = "_fs_meta"
 	DataTree = "_fs_data"
 )
+
 
 // GetTar generates a tar stream frmo the contents of db, and streams
 // it to `dst`.
@@ -102,3 +106,4 @@ func headerReader(hdr *tar.Header) (io.Reader, error) {
 	}
 	return &buf, nil
 }
+*/
