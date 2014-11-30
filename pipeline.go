@@ -2,6 +2,7 @@ package libpack
 
 import (
 	"fmt"
+	"io"
 )
 
 // A Pipeline defines a sequence of operations which can be run
@@ -32,6 +33,7 @@ type addArg struct {
 }
 
 type walkArg WalkHandler
+type dumpArg io.Writer
 
 // A TreeOp defines an individual operation operation in a pipeline.
 type TreeOp int
@@ -45,6 +47,7 @@ const (
 	OpScope
 	OpDelete
 	OpWalk
+	OpDump
 )
 
 // Set appends a new `set` instruction to a pipeline, and
@@ -75,6 +78,10 @@ func (t *Pipeline) Add(key string, overlay interface{}, merge bool) *Pipeline {
 
 func (t *Pipeline) Walk(h func(key string, entry Value) error) *Pipeline {
 	return t.setPrev(OpWalk, h)
+}
+
+func (t *Pipeline) Dump(dst io.Writer) *Pipeline {
+	return t.setPrev(OpDump, dst)
 }
 
 // Delete appends a new `delete` instruction to a pipeline, then returns the
@@ -183,6 +190,14 @@ func (t *Pipeline) Run() (*Tree, error) {
 				return nil, fmt.Errorf("mkdir: invalid argument: %v", t.arg)
 			}
 			return in, in.Walk(WalkHandler(h))
+		}
+	case OpDump:
+		{
+			dst, ok := t.arg.(dumpArg)
+			if !ok {
+				return nil, fmt.Errorf("invalid argument: %v", t.arg)
+			}
+			return in, in.Dump(dst)
 		}
 	}
 	return nil, fmt.Errorf("invalid op: %v", t.op)
