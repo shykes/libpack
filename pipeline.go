@@ -231,3 +231,18 @@ func (t *Pipeline) setPrev(op Op, arg interface{}) *Pipeline {
 		arg:  arg,
 	}
 }
+
+func concat(p1, p2 *Pipeline) *Pipeline {
+	if p1 == nil {
+		return p2
+	}
+	if p2 == nil {
+		return p1
+	}
+	// FIXME: use a linked list to make this cheaper
+	var step *Pipeline
+	for step = p2; step.prev != nil; step = step.prev {
+	}
+	step.prev = p1
+	return p2
+}
