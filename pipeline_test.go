@@ -14,7 +14,7 @@ func TestEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id := tree.Id().String(); id != EmptyTreeId {
+	if id := tree.Hash(); id != EmptyTreeId {
 		t.Fatalf("%v", id)
 	}
 }
@@ -26,8 +26,10 @@ func TestSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBlobInTree(t, r, tree, "foo", "baz")
-	assertBlobInTree(t, r, tree, "a/b/c/d", "hello world")
+	assert := tree.Pipeline().AssertEq("foo", "baz").AssertEq("a/b/c/d", "hello world")
+	if _, err := assert.Run(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAddTree(t *testing.T) {
@@ -41,8 +43,10 @@ func TestAddTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBlobInTree(t, r, tree2, "a/b/c/d", "hello world")
-	assertBlobInTree(t, r, tree2, "a/foo", "bar")
+	assert := tree2.Pipeline().AssertEq("a/b/c/d", "hello world").AssertEq("a/foo", "bar")
+	if _, err := assert.Run(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAddPipeline(t *testing.T) {
@@ -53,9 +57,10 @@ func TestAddPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBlobInTree(t, r, tree, "hello", "world")
-	assertBlobInTree(t, r, tree, "subdir/foo", "bar")
-	assertBlobInTree(t, r, tree, "foo", "abc")
+	assert := tree.Pipeline().AssertEq("hello", "world").AssertEq("subdir/foo", "bar").AssertEq("foo", "abc")
+	if _, err := assert.Run(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestDeletePipeline(t *testing.T) {
@@ -65,7 +70,10 @@ func TestDeletePipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBlobNotInTree(t, r, tree, "hello")
+	assert := tree.Pipeline().AssertNotExist("hello")
+	if _, err := assert.Run(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestScope(t *testing.T) {
@@ -75,5 +83,8 @@ func TestScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBlobInTree(t, r, tree, "d", "hello")
+	assert := tree.Pipeline().AssertEq("d", "hello")
+	if _, err := assert.Run(); err != nil {
+		t.Fatal(err)
+	}
 }
