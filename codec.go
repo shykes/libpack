@@ -2,6 +2,7 @@ package libpack
 
 import (
 	"fmt"
+	"path"
 )
 
 // Decode reads the contents of the key "/" and attempts to decode
@@ -21,4 +22,27 @@ func (t *Tree) Decode(key string, val interface{}) error {
 func (t *Tree) Encode(key string, val interface{}) (*Tree, error) {
 	// TODO
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (t *Tree) GetMap(key string) (map[string]string, error) {
+	entries, err := t.List(key)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]string)
+	for _, k := range entries {
+		v, err := t.Get(path.Join(key, k))
+		if err == nil {
+			m[k] = v
+		} else {
+			submap, err := t.GetMap(path.Join(key, k))
+			if err != nil {
+				return nil, err
+			}
+			for subk, subv := range submap {
+				m[k+"/"+subk] = subv
+			}
+		}
+	}
+	return m, nil
 }
