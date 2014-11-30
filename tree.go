@@ -229,9 +229,7 @@ func (t *Tree) ExecInCheckout(path string, args ...string) error {
 // FIXME: port pipeline to Tree
 
 func (t *Tree) Pipeline() *Pipeline {
-	return &Pipeline{
-		op: OpNop,
-	}
+	return NewPipeline().Add("/", t, false)
 }
 
 func (t *Tree) addGitObj(key string, valueId *git.Oid, merge bool) (*Tree, error) {
