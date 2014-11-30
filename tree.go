@@ -23,6 +23,10 @@ type Value interface {
 	IfTree(func(*Tree)) error
 }
 
+func (t *Tree) Hash() string {
+	return t.Id().String()
+}
+
 func (t *Tree) Get(key string) (string, error) {
 	if t == nil {
 		return "", os.ErrNotExist
@@ -103,7 +107,28 @@ func (t *Tree) Diff(other Tree) (added, removed *Tree, err error) {
 	return nil, nil, fmt.Errorf("not implemented")
 }
 
+func (t *Tree) Free() {
+	t.Tree.Free()
+}
+
 type WalkHandler func(string, Value) error
+
+func (t *Tree) List(key string) ([]string, error) {
+	subtree, err := t.Scope(key)
+	if err != nil {
+		return nil, err
+	}
+	defer subtree.Free()
+	var (
+		i     uint64
+		count uint64 = subtree.EntryCount()
+	)
+	entries := make([]string, 0, count)
+	for i = 0; i < count; i++ {
+		entries = append(entries, subtree.Tree.EntryByIndex(i).Name)
+	}
+	return entries, nil
+}
 
 func (t *Tree) Walk(h WalkHandler) error {
 	return treeWalk(t.r.gr, t.Tree, "/", func(k string, o git.Object) error {
