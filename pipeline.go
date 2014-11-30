@@ -226,6 +226,22 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 	return nil, fmt.Errorf("invalid op: %v", t.op)
 }
 
+func (t *Pipeline) Get(key string) (string, error) {
+	out, err := t.Run()
+	if err != nil {
+		return "", err
+	}
+	return out.Get(key)
+}
+
+func (t *Pipeline) List(key string) ([]string, error) {
+	out, err := t.Run()
+	if err != nil {
+		return nil, err
+	}
+	return out.List(key)
+}
+
 func (t *Pipeline) setPrev(op Op, arg interface{}) *Pipeline {
 	return &Pipeline{
 		prev: t,
