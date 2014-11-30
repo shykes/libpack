@@ -201,10 +201,10 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 		{
 			kv, ok := t.arg.([]string)
 			if !ok {
-				return nil, fmt.Errorf("invalid argument")
+				return nil, fmt.Errorf("set: invalid argument")
 			}
 			if len(kv) != 2 {
-				return nil, fmt.Errorf("invalid argument")
+				return nil, fmt.Errorf("set: invalid argument")
 			}
 			return in.Set(kv[0], kv[1])
 		}
@@ -212,7 +212,7 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 		{
 			key, ok := t.arg.(string)
 			if !ok {
-				return nil, fmt.Errorf("invalid argument: %v", t.arg)
+				return nil, fmt.Errorf("scope: invalid argument: %v", t.arg)
 			}
 			return in.Scope(key)
 		}
@@ -220,7 +220,7 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 		{
 			h, ok := t.arg.(walkArg)
 			if !ok {
-				return nil, fmt.Errorf("invalid argument: %v", t.arg)
+				return nil, fmt.Errorf("walk: invalid argument: %v", t.arg)
 			}
 			return in, in.Walk(WalkHandler(h))
 		}
@@ -228,7 +228,7 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 		{
 			dst, ok := t.arg.(dumpArg)
 			if !ok {
-				return nil, fmt.Errorf("invalid argument: %v", t.arg)
+				return nil, fmt.Errorf("dump: invalid argument: %v", t.arg)
 			}
 			return in, in.Dump(dst)
 		}
@@ -236,10 +236,10 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 		{
 			kv, ok := t.arg.([]string)
 			if !ok {
-				return nil, fmt.Errorf("invalid argument")
+				return nil, fmt.Errorf("asserteq: invalid argument")
 			}
 			if len(kv) != 2 {
-				return nil, fmt.Errorf("invalid argument")
+				return nil, fmt.Errorf("asserteq: invalid argument")
 			}
 			val, err := in.Get(kv[0])
 			if err != nil {
@@ -254,13 +254,12 @@ func (t *Pipeline) Run() (out *Tree, err error) {
 		{
 			key, ok := t.arg.(string)
 			if !ok {
-				return nil, fmt.Errorf("invalid argument")
+				return nil, fmt.Errorf("assertnotexist: invalid argument")
 			}
 			_, err := in.Get(key)
 			if err == nil {
 				return nil, fmt.Errorf("assertion failed: '%s is not set'", key)
 			}
-			// FIXME: distinguish IsNotExist and other errors
 			return in, nil
 		}
 	}
