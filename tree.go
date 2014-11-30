@@ -15,34 +15,12 @@ import (
 
 type Tree struct {
 	*git.Tree
-	r *git.Repository
+	r *Repository
 }
 
 type Value interface {
 	IfString(func(string)) error
 	IfTree(func(*Tree)) error
-}
-
-func treeFromGit(r *git.Repository, id *git.Oid) (*Tree, error) {
-	gt, err := lookupTree(r, id)
-	if err == nil {
-		return &Tree{
-			Tree: gt,
-			r:    r,
-		}, nil
-	}
-	gc, err := lookupCommit(r, id)
-	if err == nil {
-		gt, err := gc.Tree()
-		if err != nil {
-			return nil, err
-		}
-		return &Tree{
-			Tree: gt,
-			r:    r,
-		}, nil
-	}
-	return nil, fmt.Errorf("not a valid tree or commit: %s", id)
 }
 
 func (t *Tree) Get(key string) (string, error) {
@@ -54,7 +32,7 @@ func (t *Tree) Get(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	blob, err := lookupBlob(t.r, e.Id)
+	blob, err := lookupBlob(t.r.gr, e.Id)
 	if err != nil {
 		return "", err
 	}
@@ -70,7 +48,7 @@ func (t *Tree) Set(key, val string) (*Tree, error) {
 		err error
 	)
 	if val == "" {
-		out, err := exec.Command("git", "--git-dir", t.r.Path(), "hash-object", "-w", "--stdin").Output()
+		out, err := exec.Command("git", "--git-dir", t.r.gr.Path(), "hash-object", "-w", "--stdin").Output()
 		if err != nil {
 			return nil, fmt.Errorf("git hash-object: %v", err)
 		}
@@ -79,7 +57,7 @@ func (t *Tree) Set(key, val string) (*Tree, error) {
 			return nil, fmt.Errorf("git newoid %v", err)
 		}
 	} else {
-		id, err = t.r.CreateBlobFromBuffer([]byte(val))
+		id, err = t.r.gr.CreateBlobFromBuffer([]byte(val))
 		if err != nil {
 			return nil, err
 		}
@@ -102,30 +80,15 @@ func (t *Tree) SetStream(key string, src io.Reader) (*Tree, error) {
 }
 
 func (t *Tree) Mkdir(key string) (*Tree, error) {
-	empty, err := emptyTree(t.r)
-	if err != nil {
-		return nil, err
-	}
-	return t.addGitObj(key, empty, true)
+	return t.Pipeline().Add(key, t.Pipeline().Empty(), true).Run()
 }
 
 func (t *Tree) Empty() (*Tree, error) {
-	id, err := emptyTree(t.r)
-	if err != nil {
-		return nil, err
-	}
-	gt, err := lookupTree(t.r, id)
-	if err != nil {
-		return nil, err
-	}
-	return &Tree{
-		Tree: gt,
-		r:    t.r,
-	}, nil
+	return t.r.EmptyTree()
 }
 
 func (t *Tree) Delete(key string) (*Tree, error) {
-	gt, err := treeDel(t.r, t.Tree, key)
+	gt, err := treeDel(t.r.gr, t.Tree, key)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +106,7 @@ func (t *Tree) Diff(other Tree) (added, removed *Tree, err error) {
 type WalkHandler func(string, Value) error
 
 func (t *Tree) Walk(h WalkHandler) error {
-	return treeWalk(t.r, t.Tree, "/", func(k string, o git.Object) error {
+	return treeWalk(t.r.gr, t.Tree, "/", func(k string, o git.Object) error {
 		// FIXME: translate to higher-level handler
 		return fmt.Errorf("not implemented")
 	})
@@ -159,7 +122,7 @@ func (t *Tree) Subtract(key string, whiteout *Tree) (*Tree, error) {
 }
 
 func (t *Tree) Scope(key string) (*Tree, error) {
-	gt, err := treeScope(t.r, t.Tree, key)
+	gt, err := treeScope(t.r.gr, t.Tree, key)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +133,7 @@ func (t *Tree) Scope(key string) (*Tree, error) {
 }
 
 func (t *Tree) Dump(dst io.Writer) error {
-	return treeDump(t.r, t.Tree, "/", dst)
+	return treeDump(t.r.gr, t.Tree, "/", dst)
 }
 
 // Checkout populates the directory at dir with the contents of the tree.
@@ -193,7 +156,7 @@ func (t *Tree) Checkout(dir string) (checkoutDir string, err error) {
 	defer os.RemoveAll(idx.Name())
 	readTree := exec.Command(
 		"git",
-		"--git-dir", t.r.Path(),
+		"--git-dir", t.r.gr.Path(),
 		"--work-tree", dir,
 		"read-tree", t.Tree.Id().String(),
 	)
@@ -205,7 +168,7 @@ func (t *Tree) Checkout(dir string) (checkoutDir string, err error) {
 	}
 	checkoutIndex := exec.Command(
 		"git",
-		"--git-dir", t.r.Path(),
+		"--git-dir", t.r.gr.Path(),
 		"--work-tree", dir,
 		"checkout-index",
 	)
@@ -247,7 +210,7 @@ func (t *Tree) Pipeline() *Pipeline {
 }
 
 func (t *Tree) addGitObj(key string, valueId *git.Oid, merge bool) (*Tree, error) {
-	gt, err := treeAdd(t.r, t.Tree, key, valueId, merge)
+	gt, err := treeAdd(t.r.gr, t.Tree, key, valueId, merge)
 	if err != nil {
 		return nil, err
 	}

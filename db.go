@@ -9,78 +9,17 @@ import (
 
 // DB is a simple git-backed database.
 type DB struct {
-	r   *git.Repository
+	r   *Repository
 	ref string
 	l   sync.RWMutex
 }
 
-// Init initializes a new git-backed database from the following
-// elements:
-// * A bare git repository at `repo`
-// * A git reference name `ref` (for example "refs/heads/foo")
-// * An optional scope to expose only a subset of the git tree (for example "/myapp/v1")
-func Init(repo, ref string) (*DB, error) {
-	r, err := git.InitRepository(repo, true)
-	if err != nil {
-		return nil, err
-	}
-	db, err := newRepo(r, ref)
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
-
-// Open opens an existing repository. See Init() for parameters.
-func Open(repo, ref string) (*DB, error) {
-	r, err := git.OpenRepository(repo)
-	if err != nil {
-		return nil, err
-	}
-	db, err := newRepo(r, ref)
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
-
-func OpenOrInit(repo, ref string) (*DB, error) {
-	if db, err := Open(repo, ref); err == nil {
-		return db, err
-	}
-	return Init(repo, ref)
-}
-
-func newRepo(repo *git.Repository, ref string) (*DB, error) {
-	db := &DB{
-		r:   repo,
-		ref: ref,
-	}
-	return db, nil
-}
-
-// Free must be called to release resources when a database is no longer
-// in use.
-// This is required in addition to Golang garbage collection, because
-// of the libgit2 C bindings.
-func (db *DB) Free() {
-	db.r.Free()
-}
-
 func (db *DB) Get() (*Tree, error) {
-	head, err := db.head()
+	head, err := gitCommitFromRef(db.r.gr, db.ref)
 	if err != nil {
 		return nil, err
 	}
-	return treeFromGit(db.r, head.Id())
-}
-
-func (db *DB) head() (*git.Commit, error) {
-	tip, err := db.r.LookupReference(db.ref)
-	if err != nil {
-		return nil, err
-	}
-	return lookupCommit(db.r, tip.Target())
+	return db.r.TreeById(head.Id().String())
 }
 
 func (db *DB) Watch() (*Tree, chan *Tree, error) {
@@ -92,11 +31,11 @@ func (db *DB) Commit(t *Tree, msg string) (*Tree, error) {
 	if t == nil {
 		return t, nil
 	}
-	head, err := db.head()
+	head, err := gitCommitFromRef(db.r.gr, db.ref)
 	if err != nil {
 		return nil, err
 	}
-	commit, err := commitToRef(db.r, t.Tree, head, db.ref, msg)
+	commit, err := commitToRef(db.r.gr, t.Tree, head, db.ref, msg)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +59,7 @@ func (db *DB) Pull(url, ref string) error {
 	}
 	refspec := fmt.Sprintf("%s:%s", ref, db.ref)
 	fmt.Printf("Creating anonymous remote url=%s refspec=%s\n", url, refspec)
-	remote, err := db.r.CreateAnonymousRemote(url, refspec)
+	remote, err := db.r.gr.CreateAnonymousRemote(url, refspec)
 	if err != nil {
 		return err
 	}
@@ -140,7 +79,7 @@ func (db *DB) Push(url, ref string) error {
 	// The '+' prefix sets force=true,
 	// so the remote ref is created if it doesn't exist.
 	refspec := fmt.Sprintf("+%s:%s", db.ref, ref)
-	remote, err := db.r.CreateAnonymousRemote(url, refspec)
+	remote, err := db.r.gr.CreateAnonymousRemote(url, refspec)
 	if err != nil {
 		return err
 	}
@@ -162,5 +101,5 @@ func (db *DB) Push(url, ref string) error {
 // lookupTree looks up an object at hash `id` in `repo`, and returns
 // it as a git tree. If the object is not a tree, an error is returned.
 func (db *DB) lookupTree(id *git.Oid) (*git.Tree, error) {
-	return lookupTree(db.r, id)
+	return lookupTree(db.r.gr, id)
 }

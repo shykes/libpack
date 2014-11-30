@@ -236,6 +236,14 @@ func treeScope(repo *git.Repository, tree *git.Tree, name string) (*git.Tree, er
 	return lookupTree(repo, entry.Id)
 }
 
+func gitCommitFromRef(r *git.Repository, ref string) (*git.Commit, error) {
+	tip, err := r.LookupReference(ref)
+	if err != nil {
+		return nil, err
+	}
+	return lookupCommit(r, tip.Target())
+}
+
 // commitToRef creates a new commit object from the specified parent commit, content tree,
 // message and repository.
 // It updates the value of `refname` to point to the new commit, or returns an error if that
