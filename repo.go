@@ -1,7 +1,10 @@
 package libpack
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
 
 	git "github.com/libgit2/git2go"
 )
@@ -36,10 +39,24 @@ func newRepository(gr *git.Repository) (*Repository, error) {
 }
 
 func (r *Repository) DB(ref string) *DB {
+	// As a convenience, if no ref name is given, we generate a
+	// unique one.
+	if ref == "" {
+		ref = fmt.Sprintf("refs/heads/%s", randomString())
+	}
 	return &DB{
 		r:   r,
 		ref: ref,
 	}
+}
+
+func randomString() string {
+	id := make([]byte, 32)
+
+	if _, err := io.ReadFull(rand.Reader, id); err != nil {
+		panic(err) // This shouldn't happen
+	}
+	return hex.EncodeToString(id)
 }
 
 func (r *Repository) EmptyTree() (*Tree, error) {
