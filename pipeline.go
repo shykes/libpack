@@ -125,7 +125,7 @@ func (t *Pipeline) Scope(key string) *Pipeline {
 }
 
 func (t *Pipeline) AssertEq(key, val string) *Pipeline {
-	return t.setPrev(OpAssertEq, [2]string{key, val})
+	return t.setPrev(OpAssertEq, []string{key, val})
 }
 
 func (t *Pipeline) AssertNotExist(key string) *Pipeline {
