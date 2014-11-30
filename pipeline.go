@@ -126,10 +126,12 @@ func (t *Pipeline) Run() (*Tree, error) {
 				return nil, fmt.Errorf("add: invalid argument: %v", t.arg)
 			}
 			switch overlay := arg.overlay.(type) {
-				case *Tree: {
+			case *Tree:
+				{
 					return in.Add(arg.key, overlay, arg.merge)
 				}
-				case *Pipeline: {
+			case *Pipeline:
+				{
 					out, err := overlay.Run()
 					if err != nil {
 						return nil, err
