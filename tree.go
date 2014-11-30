@@ -102,7 +102,7 @@ func (t *Tree) Delete(key string) (*Tree, error) {
 	}, nil
 }
 
-func (t *Tree) Diff(other Tree) (added, removed *Tree, err error) {
+func (t *Tree) Diff(other *Tree) (added, removed *Tree, err error) {
 	// FIXME
 	return nil, nil, fmt.Errorf("not implemented")
 }
