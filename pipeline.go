@@ -24,6 +24,15 @@ type Pipeline struct {
 	prev *Pipeline
 	op   Op
 	arg  interface{}
+	run  PipelineHandler
+}
+
+type PipelineHandler func(*Pipeline) (*Tree, error)
+
+func NewPipeline() *Pipeline {
+	return &Pipeline{
+		op: OpNop,
+	}
 }
 
 type addArg struct {
@@ -49,6 +58,15 @@ const (
 	OpWalk
 	OpDump
 )
+
+func (t *Pipeline) OnRun(run PipelineHandler) *Pipeline {
+	return &Pipeline{
+		prev: t.prev,
+		op:   t.op,
+		arg:  t.arg,
+		run:  run,
+	}
+}
 
 // Set appends a new `set` instruction to a pipeline, and
 // returns the new combined pipeline.
@@ -105,7 +123,10 @@ func (t *Pipeline) Scope(key string) *Pipeline {
 // Run runs each step of the pipeline in sequence, each time passing
 // the output of step N as input to step N+1.
 // If an error is encountered, the pipeline is aborted.
-func (t *Pipeline) Run() (*Tree, error) {
+func (t *Pipeline) Run() (out *Tree, err error) {
+	if t.run != nil {
+		return t.run(t.OnRun(nil))
+	}
 	var in *Tree
 	// Call the previous operation before our own
 	// (unless the current operation is Empty or Nop, since they would
