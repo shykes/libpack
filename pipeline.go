@@ -65,6 +65,7 @@ const (
 
 func (t *Pipeline) OnRun(run PipelineHandler) *Pipeline {
 	return &Pipeline{
+		r:    t.r,
 		prev: t.prev,
 		op:   t.op,
 		arg:  t.arg,
@@ -284,6 +285,7 @@ func (t *Pipeline) List(key string) ([]string, error) {
 
 func (t *Pipeline) setPrev(op Op, arg interface{}) *Pipeline {
 	return &Pipeline{
+		r:    t.r,
 		prev: t,
 		op:   op,
 		arg:  arg,
