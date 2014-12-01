@@ -47,24 +47,9 @@ func (t *Tree) Get(key string) (string, error) {
 func (t *Tree) Set(key, val string) (*Tree, error) {
 	// FIXME: libgit2 crashes if value is empty.
 	// Work around this by shelling out to git.
-	var (
-		id  *git.Oid
-		err error
-	)
-	if val == "" {
-		out, err := exec.Command("git", "--git-dir", t.r.gr.Path(), "hash-object", "-w", "--stdin").Output()
-		if err != nil {
-			return nil, fmt.Errorf("git hash-object: %v", err)
-		}
-		id, err = git.NewOid(strings.Trim(string(out), " \t\r\n"))
-		if err != nil {
-			return nil, fmt.Errorf("git newoid %v", err)
-		}
-	} else {
-		id, err = t.r.gr.CreateBlobFromBuffer([]byte(val))
-		if err != nil {
-			return nil, err
-		}
+	id, err := t.r.gr.CreateBlobFromBuffer([]byte(val))
+	if err != nil {
+		return nil, err
 	}
 	return t.addGitObj(key, id.String(), true)
 }
