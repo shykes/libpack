@@ -40,7 +40,12 @@ func assertNotExist(t *testing.T, db *DB, key string) {
 func TestSetEmpty(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Set("foo", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +54,11 @@ func TestSetEmpty(t *testing.T) {
 func TestList(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	db.Set("foo", "bar")
 	for _, rootpath := range []string{"", ".", "/", "////", "///."} {
 		names, err := db.List(rootpath)
@@ -79,7 +88,11 @@ func TestList(t *testing.T) {
 func TestSetGetSimple(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Set("foo", "bar"); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +106,11 @@ func TestSetGetSimple(t *testing.T) {
 func TestSetGetMultiple(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Set("foo", "bar"); err != nil {
 		t.Fatal(err)
 	}
@@ -115,13 +132,21 @@ func TestSetGetMultiple(t *testing.T) {
 func TestCommitConcurrentNoConflict(t *testing.T) {
 	r1 := tmpRepo(t)
 	defer nukeRepo(r1)
-	db1 := r1.DB("")
+
+	db1, err := r1.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	r2, err := Init(r1.gr.Path(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db2 := r2.DB(db1.Name())
+
+	db2, err := r2.DB(db1.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	db1.Set("foo", "A")
 	db2.Set("bar", "B")
@@ -130,7 +155,11 @@ func TestCommitConcurrentNoConflict(t *testing.T) {
 	assertGet(t, db2.Query(), "bar", "B")
 
 	r3, _ := Init(r1.gr.Path(), false)
-	db3 := r3.DB(db1.Name())
+	db3, err := r3.DB(db1.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	assertGet(t, db3.Query(), "foo", "A")
 	assertGet(t, db3.Query(), "bar", "B")
 }
@@ -138,25 +167,36 @@ func TestCommitConcurrentNoConflict(t *testing.T) {
 func TestCommitConcurrentWithConflict(t *testing.T) {
 	r1 := tmpRepo(t)
 	defer nukeRepo(r1)
-	db1 := r1.DB("")
+
+	db1, err := r1.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	r2, err := Init(r1.gr.Path(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db2 := r2.DB(db1.Name())
+	db2, err := r2.DB(db1.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	db1.Set("foo", "A")
 	db2.Set("foo", "B")
-	db1.Set("1", "written by 1")
 
+	db1.Set("1", "written by 1")
 	db1.Set("2", "written by 2")
 
 	assertGet(t, db1.Query(), "foo", "A")
 	assertGet(t, db2.Query(), "foo", "B")
 
 	r3, _ := Init(r1.gr.Path(), false)
-	db3 := r3.DB(db1.Name())
+	db3, err := r3.DB(db1.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	assertGet(t, db3.Query(), "foo", "B")
 	assertGet(t, db3.Query(), "1", "written by 1")
 	assertGet(t, db3.Query(), "2", "written by 2")
@@ -165,7 +205,11 @@ func TestCommitConcurrentWithConflict(t *testing.T) {
 func TestSetCommitGet(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("test")
+	db, err := r.DB("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Set("foo", "bar"); err != nil {
 		t.Fatal(err)
 	}
@@ -175,13 +219,18 @@ func TestSetCommitGet(t *testing.T) {
 	if _, err := db.Query().Set("ga", "added after commit").Run(); err != nil {
 		t.Fatal(err)
 	}
+
 	// Re-open the repo
-	var err error
 	r, err = Init(r.gr.Path(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db = r.DB("test")
+
+	db, err = r.DB("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if val, err := db.Get("foo"); err != nil {
 		t.Fatal(err)
 	} else if val != "bar" {
@@ -197,7 +246,11 @@ func TestSetCommitGet(t *testing.T) {
 func TestSetGetNested(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("test")
+	db, err := r.DB("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Set("a/b/c/d/hello", "world"); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +265,12 @@ func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]st
 	for _, ref := range refs {
 		root := tmpRepo(t)
 		defer nukeRepo(root)
-		rootdb := root.DB(ref)
+
+		rootdb, err := root.DB(ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		for _, scope := range scopes {
 			q := rootdb.Query().Scope(scope)
 			if len(components) == 0 {
@@ -271,7 +329,11 @@ func TestSetGetNestedMultipleScoped(t *testing.T) {
 func TestMkdir(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Mkdir("/"); err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +351,11 @@ func TestMkdir(t *testing.T) {
 func TestDelete(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := db.Set("test", "quux"); err != nil {
 		t.Fatal(err)

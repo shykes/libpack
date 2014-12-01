@@ -38,16 +38,26 @@ func newRepository(gr *git.Repository) (*Repository, error) {
 	}, nil
 }
 
-func (r *Repository) DB(ref string) *DB {
+func (r *Repository) DB(ref string) (*DB, error) {
 	// As a convenience, if no ref name is given, we generate a
 	// unique one.
 	if ref == "" {
 		ref = fmt.Sprintf("refs/heads/%s", randomString())
+
+		t, err := r.EmptyTree()
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err := commitToRef(r.gr, t.Tree, nil, ref, "new head"); err != nil {
+			return nil, err
+		}
 	}
+
 	return &DB{
 		r:   r,
 		ref: ref,
-	}
+	}, nil
 }
 
 func randomString() string {

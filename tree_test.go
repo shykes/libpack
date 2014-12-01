@@ -86,7 +86,12 @@ func TestScopeNoop(t *testing.T) {
 func TestScopeTree(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	q := db.Query().Set("a/b/c/d/hello", "world").Scope("a/b/c/d")
 	var buf bytes.Buffer
 	if _, err := q.Dump(&buf).Run(); err != nil {
@@ -100,7 +105,12 @@ func TestScopeTree(t *testing.T) {
 func TestMultiScope(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	a := db.Query().Set("a/b/c/d", "hello").Scope("a")
 	ab := a.Scope("b")
 	var abDump bytes.Buffer
@@ -113,7 +123,12 @@ func TestMultiScope(t *testing.T) {
 func TestTreeSetEmpty(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Query().Set("foo", "").Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +137,12 @@ func TestTreeSetEmpty(t *testing.T) {
 func TestCheckout(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db := r.DB("")
+
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := db.Set("foo/bar/baz", "hello world"); err != nil {
 		t.Fatal(err)
 	}
