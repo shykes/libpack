@@ -41,6 +41,32 @@ func nukeDB(db *DB) {
 	os.RemoveAll(dir)
 }
 
+func TestMultiLevelSetRemove(t *testing.T) {
+	tmp := tmpDB(t, "")
+	defer nukeDB(tmp)
+
+	if err := tmp.Set("multi/level/tree", "one"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := tmp.Set("two/level", "two"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := tmp.Delete("multi"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := tmp.Get("two/level")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result != "two" {
+		t.Fatalf("Result %q is not equal to 'two'", result)
+	}
+}
+
 func TestOpen(t *testing.T) {
 	tmp := tmpdir(t)
 	defer os.RemoveAll(tmp)
