@@ -183,6 +183,21 @@ func TestTreeSetEmpty(t *testing.T) {
 	}
 }
 
+func TestTreeSetGetSimple(t *testing.T) {
+	var err error
+	r, tree := tmpTree(t)
+	defer nukeRepo(r)
+
+	if tree, err = tree.Set("foo", "bar"); err != nil {
+		t.Fatal(err)
+	}
+	if key, err := tree.Get("foo"); err != nil {
+		t.Fatal(err)
+	} else if key != "bar" {
+		t.Fatalf("%#v", key)
+	}
+}
+
 func TestTreeCheckout(t *testing.T) {
 	t.Skip("FIXME: Tree.Checkout does not work properly at the moment.")
 	r := tmpRepo(t)
