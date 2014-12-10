@@ -2,9 +2,11 @@ package libpack
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	git "github.com/libgit2/git2go"
@@ -21,6 +23,40 @@ func tmpTree(t *testing.T) (*Repository, *Tree) {
 		t.Fatal(err)
 	}
 	return r, empty
+}
+
+func TestTreeList(t *testing.T) {
+	var err error
+	r, tree := tmpTree(t)
+	defer nukeRepo(r)
+
+	if tree, err = tree.Set("foo", "bar"); err != nil {
+		t.Fatal(err)
+	}
+	for _, rootpath := range []string{"", ".", "/", "////", "///."} {
+		names, err := tree.List(rootpath)
+		if err != nil {
+			t.Fatalf("%s: %v", rootpath, err)
+		}
+		if fmt.Sprintf("%v", names) != "[foo]" {
+			t.Fatalf("List(%v) =  %#v", rootpath, names)
+		}
+	}
+	for _, wrongpath := range []string{
+		"does-not-exist",
+		"sldhfsjkdfhkjsdfh",
+		"a/b/c/d",
+		"foo/sdfsdf",
+	} {
+		_, err := tree.List(wrongpath)
+		if err == nil {
+			t.Fatalf("should fail: %s", wrongpath)
+		}
+		if !strings.Contains(err.Error(), "does not exist in the given tree") {
+			t.Fatalf("wrong error: %v", err)
+		}
+	}
+
 }
 
 func TestTreePipeline(t *testing.T) {
