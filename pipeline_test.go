@@ -168,3 +168,30 @@ func TestPipelineOnRun(t *testing.T) {
 		t.Fatalf("run handler not called")
 	}
 }
+
+func TestPipelineConcat(t *testing.T) {
+	r, empty := tmpTree(t)
+	defer nukeRepo(r)
+
+	in, err := empty.Set("foo", "bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	step1 := NewPipeline(r).Add("/", in, false)
+	step2 := NewPipeline(r).Set("hello", "world")
+	p := concat(step1, step2)
+
+	if _, err := p.AssertEq("foo", "bar").AssertEq("hello", "world").Run(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert := out.Pipeline().AssertEq("foo", "bar").AssertEq("hello", "world")
+	if _, err := assert.Run(); err != nil {
+		t.Fatal(err)
+	}
+}
