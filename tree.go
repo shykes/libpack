@@ -154,6 +154,9 @@ func (t *Tree) Dump(dst io.Writer) error {
 // FIXME: this does not work properly at the moment.
 //
 func (t *Tree) Checkout(dir string) (checkoutDir string, err error) {
+	// FIXME: Tree.Checkout does not work properly at the moment
+	return "", fmt.Errorf("FIXME: known bug")
+
 	// If the tree is empty, checkout will fail and there is
 	// nothing to do anyway
 	if t.EntryCount() == 0 {
