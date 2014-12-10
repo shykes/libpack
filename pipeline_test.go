@@ -20,6 +20,47 @@ func TestPipelineEmpty(t *testing.T) {
 	}
 }
 
+func TestPipelineAssert(t *testing.T) {
+	r, tree := tmpTree(t)
+	defer nukeRepo(r)
+
+	treeOut, err := tree.Pipeline().AssertNotExist("foo").Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if treeOut.Hash() != tree.Hash() {
+		t.Fatalf("assertion changed output tree: %s -> %s\n", tree.Hash(), treeOut.Hash())
+	}
+
+	_, err = tree.Pipeline().AssertEq("foo", "bar").Run()
+	if err == nil {
+		t.Fatalf("wrong assertion did not trigger an error")
+	}
+
+	// Now create an entry and test the opposite
+	tree, err = tree.Set("foo", "bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = tree.Pipeline().AssertNotExist("foo").Run()
+	if err == nil {
+		t.Fatalf("wrong assertion did not trigger an error")
+	}
+
+	treeOut, err = tree.Pipeline().AssertEq("foo", "bar").Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if treeOut.Hash() != tree.Hash() {
+		t.Fatalf("assertion changed output tree: %s -> %s\n", tree.Hash(), treeOut.Hash())
+	}
+	_, err = tree.Pipeline().AssertEq("foo", "WRONG VALUE").Run()
+	if err == nil {
+		t.Fatalf("wrong assertion did not trigger an error")
+	}
+}
+
 func TestPipelineSet(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
