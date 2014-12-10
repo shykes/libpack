@@ -17,7 +17,7 @@ const (
 	DataTree = "_fs_data"
 )
 
-// GetTar generates a tar stream frmo the contents of db, and streams
+// GetTar generates a tar stream from the contents of db, and streams
 // it to `dst`.
 func (db *DB) GetTar(dst io.Writer) error {
 	tw := tar.NewWriter(dst)
@@ -49,7 +49,7 @@ func (db *DB) GetTar(dst io.Writer) error {
 	return nil
 }
 
-// SetTar adds data to db from a tar strema decoded from `src`.
+// SetTar adds data to db from a tar stream decoded from `src`.
 // Raw data is stored at the key `_fs_data/', and metadata in a
 // separate key '_fs_metadata'.
 func (db *DB) SetTar(src io.Reader) error {

@@ -66,8 +66,8 @@ func TestWalkAnnotations(t *testing.T) {
 	// ideally, this structure should enforce the deterministic nature of
 	// WalkAnnotations.
 	resultMap := [][][]string{
-		[][]string{[]string{"/one"}, []string{"one"}},
-		[][]string{[]string{"/one", "/one/two"}, []string{"one", "one/two"}},
+		{{"/one"}, {"one"}},
+		{{"/one", "/one/two"}, {"one", "one/two"}},
 	}
 
 	for _, list := range resultMap {
