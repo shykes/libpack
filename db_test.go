@@ -51,7 +51,7 @@ func TestDBSetEmpty(t *testing.T) {
 	}
 }
 
-func TestDBDBList(t *testing.T) {
+func TestDBList(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	db, err := r.DB("")

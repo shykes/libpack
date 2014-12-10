@@ -1,6 +1,7 @@
 package libpack
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -86,5 +87,15 @@ func TestPipelineScope(t *testing.T) {
 	assert := tree.Pipeline().AssertEq("d", "hello")
 	if _, err := assert.Run(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPipelineDump(t *testing.T) {
+	r := tmpRepo(t)
+	defer nukeRepo(r)
+	var buf bytes.Buffer
+	NewPipeline(r).Set("foo", "bar").Dump(&buf).Delete("foo").Run()
+	if dump := buf.String(); dump != "foo = bar\n" {
+		t.Fatalf("%#v --> |%v|\n", dump)
 	}
 }
