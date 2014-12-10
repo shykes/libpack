@@ -6,7 +6,7 @@ import (
 
 const EmptyTreeId string = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
-func TestEmpty(t *testing.T) {
+func TestPipelineEmpty(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	p := NewPipeline(r)
@@ -19,7 +19,7 @@ func TestEmpty(t *testing.T) {
 	}
 }
 
-func TestSet(t *testing.T) {
+func TestPipelineSet(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	tree, err := NewPipeline(r).Set("foo", "bar").Set("a/b/c/d", "hello world").Set("foo", "baz").Run()
@@ -32,7 +32,7 @@ func TestSet(t *testing.T) {
 	}
 }
 
-func TestAddTree(t *testing.T) {
+func TestPipelineAddTree(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	tree1, err := NewPipeline(r).Set("foo", "bar").Run()
@@ -49,7 +49,7 @@ func TestAddTree(t *testing.T) {
 	}
 }
 
-func TestAddPipeline(t *testing.T) {
+func TestPipelineAdd(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	foobar := NewPipeline(r).Set("foo", "bar")
@@ -63,7 +63,7 @@ func TestAddPipeline(t *testing.T) {
 	}
 }
 
-func TestDeletePipeline(t *testing.T) {
+func TestPipelineDelete(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	tree, err := NewPipeline(r).Set("hello", "world").Delete("hello").Run()
@@ -76,7 +76,7 @@ func TestDeletePipeline(t *testing.T) {
 	}
 }
 
-func TestScope(t *testing.T) {
+func TestPipelineScope(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	tree, err := NewPipeline(r).Set("a/b/c/d", "hello").Scope("a/b/c").Run()
