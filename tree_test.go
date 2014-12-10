@@ -23,7 +23,7 @@ func tmpTree(t *testing.T) (*Repository, *Tree) {
 	return r, empty
 }
 
-func TestPipeline(t *testing.T) {
+func TestTreePipeline(t *testing.T) {
 	r := tmpRepo(t)
 	p := NewPipeline(r).Set("foo", "bar").Set("a/b/c", "hello").Mkdir("a/b/c/d")
 	if p == nil {
@@ -53,7 +53,7 @@ func TestPipeline(t *testing.T) {
 	}
 }
 
-func TestEmptyTree(t *testing.T) {
+func TestTreeEmpty(t *testing.T) {
 	repo := tmpRepo(t)
 	defer nukeRepo(repo)
 	empty, err := repo.EmptyTree()
@@ -65,7 +65,7 @@ func TestEmptyTree(t *testing.T) {
 	}
 }
 
-func TestScopeNoop(t *testing.T) {
+func TestTreeScopeNoop(t *testing.T) {
 	r, empty := tmpTree(t)
 	defer nukeRepo(r)
 	tree1, err := empty.Set("foo/bar", "hello")
@@ -83,7 +83,7 @@ func TestScopeNoop(t *testing.T) {
 	}
 }
 
-func TestScopeTree(t *testing.T) {
+func TestTreeScope(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 
@@ -102,7 +102,7 @@ func TestScopeTree(t *testing.T) {
 	}
 }
 
-func TestMultiScope(t *testing.T) {
+func TestTreeMultiScope(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 
@@ -134,7 +134,7 @@ func TestTreeSetEmpty(t *testing.T) {
 	}
 }
 
-func TestCheckout(t *testing.T) {
+func TestTreeCheckout(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 

@@ -37,7 +37,7 @@ func assertNotExist(t *testing.T, db *DB, key string) {
 	}
 }
 
-func TestSetEmpty(t *testing.T) {
+func TestDBSetEmpty(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 
@@ -51,7 +51,7 @@ func TestSetEmpty(t *testing.T) {
 	}
 }
 
-func TestList(t *testing.T) {
+func TestDBDBList(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	db, err := r.DB("")
@@ -85,7 +85,7 @@ func TestList(t *testing.T) {
 	}
 }
 
-func TestSetGetSimple(t *testing.T) {
+func TestDBSetGetSimple(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	db, err := r.DB("")
@@ -103,7 +103,7 @@ func TestSetGetSimple(t *testing.T) {
 	}
 }
 
-func TestSetGetMultiple(t *testing.T) {
+func TestDBSetGetMultiple(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	db, err := r.DB("")
@@ -129,7 +129,7 @@ func TestSetGetMultiple(t *testing.T) {
 	}
 }
 
-func TestCommitConcurrentNoConflict(t *testing.T) {
+func TestDBCommitConcurrentNoConflict(t *testing.T) {
 	r1 := tmpRepo(t)
 	defer nukeRepo(r1)
 
@@ -164,7 +164,7 @@ func TestCommitConcurrentNoConflict(t *testing.T) {
 	assertGet(t, db3.Query(), "bar", "B")
 }
 
-func TestCommitConcurrentWithConflict(t *testing.T) {
+func TestDBCommitConcurrentWithConflict(t *testing.T) {
 	r1 := tmpRepo(t)
 	defer nukeRepo(r1)
 
@@ -202,7 +202,7 @@ func TestCommitConcurrentWithConflict(t *testing.T) {
 	assertGet(t, db3.Query(), "2", "written by 2")
 }
 
-func TestSetCommitGet(t *testing.T) {
+func TestDBSetCommitGet(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	db, err := r.DB("test")
@@ -243,7 +243,7 @@ func TestSetCommitGet(t *testing.T) {
 	}
 }
 
-func TestSetGetNested(t *testing.T) {
+func TestDBSetGetNested(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	db, err := r.DB("test")
@@ -302,7 +302,7 @@ func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]st
 	}
 }
 
-func TestSetGetNestedMultiple1(t *testing.T) {
+func TestDBSetGetNestedMultiple1(t *testing.T) {
 	testSetGet(t,
 		[]string{"refs/heads/test"},
 		[]string{""},
@@ -310,7 +310,7 @@ func TestSetGetNestedMultiple1(t *testing.T) {
 	)
 }
 
-func TestSetGetNestedMultiple(t *testing.T) {
+func TestDBSetGetNestedMultiple(t *testing.T) {
 	testSetGet(t,
 		[]string{"refs/heads/test"},
 		[]string{""},
@@ -318,7 +318,7 @@ func TestSetGetNestedMultiple(t *testing.T) {
 	)
 }
 
-func TestSetGetNestedMultipleScoped(t *testing.T) {
+func TestDBSetGetNestedMultipleScoped(t *testing.T) {
 	testSetGet(t,
 		[]string{"refs/heads/test"},
 		[]string{"0.1"},
@@ -326,7 +326,7 @@ func TestSetGetNestedMultipleScoped(t *testing.T) {
 	)
 }
 
-func TestMkdir(t *testing.T) {
+func TestDBMkdir(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	db, err := r.DB("")
@@ -348,7 +348,7 @@ func TestMkdir(t *testing.T) {
 	}
 }
 
-func TestDelete(t *testing.T) {
+func TestDBDelete(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 
