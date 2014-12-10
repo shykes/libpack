@@ -111,12 +111,25 @@ func TestTreeMultiScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := db.Query().Set("a/b/c/d", "hello").Scope("a")
-	ab := a.Scope("b")
+	root, err := db.Query().Set("a/b/c/d", "hello").Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := root.Scope("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ab, err := a.Scope("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var abDump bytes.Buffer
-	ab.Dump(&abDump)
+	if err := ab.Dump(&abDump); err != nil {
+		t.Fatal(err)
+	}
 	if s := abDump.String(); s != "c/\nc/d = hello\n" {
-		t.Fatalf("%v\n", s)
+		t.Fatalf("%#v.Dump() = |%v|\n", ab, abDump.String())
 	}
 }
 
