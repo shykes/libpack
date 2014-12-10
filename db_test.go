@@ -37,6 +37,50 @@ func assertNotExist(t *testing.T, db *DB, key string) {
 	}
 }
 
+func tmpDB(t *testing.T) (*Repository, *DB) {
+	r := tmpRepo(t)
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r, db
+}
+
+// DB.setTree is private but central to the DB logic
+func TestDBSetTree(t *testing.T) {
+	r, db := tmpDB(t)
+	defer nukeRepo(r)
+	fmt.Printf("---> %s\n", r.gr.Path())
+
+	empty, err := db.Query().Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	foobar, err := empty.Set("foo", "bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var oldTree *Tree
+	newTree, err := db.setTree(foobar, &oldTree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newTree.Hash() != foobar.Hash() {
+		t.Fatalf("%s != %s\n", newTree.Hash(), foobar.Hash())
+	}
+	if oldTree.Hash() != empty.Hash() {
+		t.Fatalf("%s != %s\n", newTree.Hash(), foobar.Hash())
+	}
+
+	if result, err := db.getTree(); err != nil {
+		t.Fatal(err)
+	} else if foo, err := result.Get("foo"); err != nil {
+		t.Fatal(err)
+	} else if foo != "bar" {
+		t.Fatalf("%v != %v", foo, "bar")
+	}
+}
+
 func TestDBSetEmpty(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
