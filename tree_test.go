@@ -156,16 +156,13 @@ func TestTreeCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if _, err := db.Set("foo/bar/baz", "hello world"); err != nil {
-		t.Fatal(err)
-	}
-	checkoutTmp := tmpdir(t)
-	defer os.RemoveAll(checkoutTmp)
-	tree, err := db.Query().Run()
+	tree, err := db.Query().Set("foo/bar/baz", "hello world").Run()
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	checkoutTmp := tmpdir(t)
+	defer os.RemoveAll(checkoutTmp)
 	if _, err := tree.Checkout(checkoutTmp); err != nil {
 		t.Fatal(err)
 	}
