@@ -140,3 +140,31 @@ func TestPipelineDump(t *testing.T) {
 		t.Fatalf("%#v --> |%v|\n", dump)
 	}
 }
+
+func TestPipelineOnRun(t *testing.T) {
+	r := tmpRepo(t)
+	defer nukeRepo(r)
+
+	var called bool
+	run := func(p *Pipeline) (*Tree, error) {
+		called = true
+		return p.Run()
+	}
+	p1 := NewPipeline(r)
+	p2 := NewPipeline(r).OnRun(run)
+
+	t1, err := p1.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t2, err := p2.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t1.Hash() != t2.Hash() {
+		t.Fatalf("%s != %s\n", t1.Hash(), t2.Hash())
+	}
+	if !called {
+		t.Fatalf("run handler not called")
+	}
+}
