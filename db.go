@@ -28,17 +28,13 @@ type DB struct {
 
 // Scope restricts the path that can be used for writing content. Several
 // strings are composed to make a path similar to filepath.Join().
-//
-// Multiple calls to Scope will replace the scope, not append to it.
 func (db *DB) Scope(scope ...string) *DB {
 	// FIXME: do we risk duplicate db.repo.Free()?
-	newScope := []string{db.scope}
-	newScope = append(newScope, scope...)
 	return &DB{
 		repo:   db.repo,
 		commit: db.commit,
 		ref:    db.ref,
-		scope:  path.Join(newScope...), // If parent!=nil, scope is relative to parent
+		scope:  path.Join(scope...), // If parent!=nil, scope is relative to parent
 		tree:   db.tree,
 		parent: db,
 	}
@@ -171,7 +167,11 @@ func (db *DB) Tree() (*git.Tree, error) {
 }
 
 func (db *DB) Dump(dst io.Writer) error {
-	return TreeDump(db.repo, db.tree, path.Join(db.scope, "/"), dst)
+	var absoluteScope string
+	for p := db; p != nil; p = p.parent {
+		absoluteScope = path.Join(p.scope, absoluteScope)
+	}
+	return TreeDump(db.repo, db.tree, path.Join(absoluteScope, "/"), dst)
 }
 
 // AddDB copies the contents of src into db at prefix key.
