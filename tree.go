@@ -13,16 +13,24 @@ import (
 	git "github.com/libgit2/git2go"
 )
 
+// A Tree is a simple data structure that is API-compatible
+// with git tree objects.
+// It is essentially an immutable directory in a content-addressable
+// filesystem made of directories (trees) and files (blobs).
 type Tree struct {
 	*git.Tree
 	r *Repository
 }
 
+// A value is either a Tree or a string.
+// Values can be stored in trees.
 type Value interface {
 	IfString(func(string)) error
 	IfTree(func(*Tree)) error
 }
 
+// Hash returns the immutable, globally unique SHA hash
+// of the tree.
 func (t *Tree) Hash() string {
 	return t.Id().String()
 }
