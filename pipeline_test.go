@@ -170,21 +170,21 @@ func TestPipelineOnRun(t *testing.T) {
 }
 
 func TestPipelineConcat(t *testing.T) {
-	r, empty := tmpTree(t)
+	r := tmpRepo(t)
 	defer nukeRepo(r)
 
-	in, err := empty.Set("foo", "bar")
-	if err != nil {
-		t.Fatal(err)
-	}
+	in := prepopulateTree(r, t, "foo", "bar")
 
 	step1 := NewPipeline(r).Add("/", in, false)
-	step2 := NewPipeline(r).Set("hello", "world")
-	p := concat(step1, step2)
+	assertGet(t, step1, "foo", "bar")
 
-	if _, err := p.AssertEq("foo", "bar").AssertEq("hello", "world").Run(); err != nil {
-		t.Fatal(err)
-	}
+	step2 := NewPipeline(r).Set("hello", "world")
+	assertGet(t, step2, "hello", "world")
+
+	p := concat(step1, step2)
+	assertGet(t, p, "foo", "bar")
+	assertGet(t, p, "hello", "world")
+
 	out, err := p.Run()
 	if err != nil {
 		t.Fatal(err)
