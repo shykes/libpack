@@ -134,6 +134,15 @@ func TestDBSetEmpty(t *testing.T) {
 	if _, err := db.Set("foo", ""); err != nil {
 		t.Fatal(err)
 	}
+	tree, err := db.getTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foo, err := tree.Get("foo"); err != nil {
+		t.Fatal(err)
+	} else if foo != "" {
+		t.Fatalf("%#v\n", foo)
+	}
 }
 
 func TestDBList(t *testing.T) {
