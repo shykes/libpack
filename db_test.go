@@ -88,6 +88,40 @@ func TestDBSetTree(t *testing.T) {
 	}
 }
 
+func TestDBQuery(t *testing.T) {
+	r, db := tmpDB(t)
+	defer nukeRepo(r)
+
+	foobar := prepopulateTree(r, t, "foo", "bar")
+	_, err := db.setTree(foobar, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	q := db.Query()
+	assertGet(t, q, "foo", "bar")
+}
+
+func TestDBGet(t *testing.T) {
+	r := tmpRepo(t)
+	defer nukeRepo(r)
+
+	db, err := r.DB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tree := prepopulateTree(r, t, "foo/bar", "hello")
+	if _, err := db.setTree(tree, nil); err != nil {
+		t.Fatal(err)
+	}
+	if key, err := db.Get("foo/bar"); err != nil {
+		t.Fatal(err)
+	} else if key != "hello" {
+		t.Fatalf("%#v", key)
+	}
+}
+
 func TestDBSetEmpty(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
