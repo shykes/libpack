@@ -35,6 +35,11 @@ func (t *Tree) Hash() string {
 	return t.Id().String()
 }
 
+// Repository returns the Repository backing this tree.
+func (t *Tree) Repo() *Repository {
+	return t.r
+}
+
 func (t *Tree) Get(key string) (string, error) {
 	if t == nil {
 		return "", os.ErrNotExist
