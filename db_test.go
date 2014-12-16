@@ -46,20 +46,27 @@ func tmpDB(t *testing.T) (*Repository, *DB) {
 	return r, db
 }
 
+// prepopulateTree creates a tree as part of a test, and pre-populates it
+// with the given key and value.
+func prepopulateTree(r *Repository, t *testing.T, key, value string) *Tree {
+	empty, err := r.EmptyTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := empty.Set(key, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree
+}
+
 // DB.setTree is private but central to the DB logic
 func TestDBSetTree(t *testing.T) {
 	r, db := tmpDB(t)
 	defer nukeRepo(r)
 	fmt.Printf("---> %s\n", r.gr.Path())
 
-	empty, err := db.Query().Run()
-	if err != nil {
-		t.Fatal(err)
-	}
-	foobar, err := empty.Set("foo", "bar")
-	if err != nil {
-		t.Fatal(err)
-	}
+	foobar := prepopulateTree(r, t, "foo", "bar")
 	var oldTree *Tree
 	newTree, err := db.setTree(foobar, &oldTree)
 	if err != nil {
@@ -68,7 +75,7 @@ func TestDBSetTree(t *testing.T) {
 	if newTree.Hash() != foobar.Hash() {
 		t.Fatalf("%s != %s\n", newTree.Hash(), foobar.Hash())
 	}
-	if oldTree.Hash() != empty.Hash() {
+	if oldTree.Hash() != EmptyTreeId {
 		t.Fatalf("%s != %s\n", newTree.Hash(), foobar.Hash())
 	}
 
