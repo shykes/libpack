@@ -10,38 +10,9 @@ import (
 	"github.com/docker/libtrust"
 )
 
-type Server struct {
-	sshCfg *ssh.ServerConfig
-	h      Handler
-}
-
-type Handler interface {
-	Get(key string) (string, error)
-	Set(key, value string) (*Tree, error)
-	List(key string) ([]string, error)
-	Dump(dst io.Writer) error
-	Hash() (string, error)
-}
-
-func NewServer(key ssh.Signer, h Handler) *Server {
-	sshCfg := &ssh.ServerConfig{
-		// PublicKeyCallback: allowAll,
-		NoClientAuth: true,
-	}
-	sshCfg.AddHostKey(key)
-	srv := &Server{
-		sshCfg: sshCfg,
-		h:      h,
-	}
-	return srv
-}
-
-type Cmd struct {
-	Name   string
-	Args   []string
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+type SSHHandler interface {
+	AcceptSSH(chType, chArg string) bool
+	HandleSSH(chType, chArg string, ch ssh.Channel, reqs <-chan *ssh.Request) error
 }
 
 func GenerateKey() (ssh.Signer, error) {
@@ -56,9 +27,22 @@ func GenerateKey() (ssh.Signer, error) {
 	return s, nil
 }
 
-func allowAll(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-	fmt.Printf("Public key request:\n--> %v\n--> %v\n", conn, key)
-	return nil, nil
+type Server struct {
+	sshCfg *ssh.ServerConfig
+	h      SSHHandler
+}
+
+func NewServer(key ssh.Signer, h SSHHandler) *Server {
+	sshCfg := &ssh.ServerConfig{
+		// PublicKeyCallback: allowAll,
+		NoClientAuth: true,
+	}
+	sshCfg.AddHostKey(key)
+	srv := &Server{
+		sshCfg: sshCfg,
+		h:      h,
+	}
+	return srv
 }
 
 func (srv *Server) ListenAndServe(proto, addr string) error {
@@ -81,139 +65,139 @@ func (srv *Server) Serve(l net.Listener) error {
 }
 
 func (srv *Server) ServeConn(conn net.Conn) error {
-	// Before use, a handshake must be performed on the incoming
-	// net.Conn.
 	_, chans, reqs, err := ssh.NewServerConn(conn, srv.sshCfg)
 	if err != nil {
 		return fmt.Errorf("handshake: %v", err)
 	}
-	// The incoming Request channel must be serviced.
 	go ssh.DiscardRequests(reqs)
-
-	// Service the incoming Channel channel.
-	for newChannel := range chans {
-		// Channels have a type, depending on the application level
-		// protocol intended. In the case of a shell, the type is
-		// "session" and ServerShell may be used to present a simple
-		// terminal interface.
-		// fmt.Printf("--> NEWCHAN '%s' '%s'\n", newChannel.ChannelType(), newChannel.ExtraData())
-		if newChannel.ChannelType() != "session" {
-			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+	for nch := range chans {
+		var (
+			chType = nch.ChannelType()
+			chArg  = string(nch.ExtraData())
+		)
+		if !srv.h.AcceptSSH(chType, chArg) {
+			nch.Reject(ssh.UnknownChannelType, "unknown channel type")
 			continue
 		}
-		channel, requests, err := newChannel.Accept()
+		ch, reqs, err := nch.Accept()
 		if err != nil {
-			return fmt.Errorf("could not accept channel.")
+			return fmt.Errorf("accept: %v", err)
 		}
-
-		go srv.serveChannel(channel, requests)
+		// FIXME: use context.Context to cleanly synchronize with handlers, block on them
+		// but still be able to terminate them gracefully.
+		go func(ch ssh.Channel, reqs <-chan *ssh.Request) {
+			if err := srv.h.HandleSSH(chType, chArg, ch, reqs); err != nil {
+				fmt.Fprintf(ch.Stderr(), "--> %v\n", err)
+			}
+			ch.Close()
+		}(ch, reqs)
 	}
 	return nil
 }
 
-func (srv *Server) handleChannelRequest(channel ssh.Channel, req *ssh.Request) error {
-	switch req.Type {
-	case "exec":
-		{
-			defer channel.Close()
-			args := strings.Split(string(req.Payload[4:]), " ")
-			if len(args) == 0 {
-				return fmt.Errorf("no arguments")
-			}
-			return srv.HandleCommand(&Cmd{
-				Name:   args[0],
-				Args:   args[1:],
-				Stdin:  channel,
-				Stdout: channel,
-				Stderr: channel.Stderr(),
-			})
-		}
-	default:
-		return fmt.Errorf("unsupported channel request")
+// DB implements SSHHandler, awesome!
+
+func (db *DB) AcceptSSH(chType, chArg string) bool {
+	if chType == "session" {
+		return true
 	}
+	return false
 }
 
-func (srv *Server) HandleCommand(cmd *Cmd) (err error) {
-	fmt.Printf("CMD: [%s] [%v]\n", cmd.Name, cmd.Args)
-	defer func() {
-		if err != nil {
-			fmt.Fprintf(cmd.Stderr, "--> %v\n", err)
-		}
-	}()
-	switch cmd.Name {
-	case "get":
-		{
-			if len(cmd.Args) != 1 {
-				return fmt.Errorf("usage: get VALUE")
+func (db *DB) HandleSSH(chType, chArg string, ch ssh.Channel, reqs <-chan *ssh.Request) error {
+	if chType == "session" {
+		return db.handleSSHSession(ch, reqs)
+	}
+	return fmt.Errorf("unsupported channel type: %s", chType)
+}
+
+func (db *DB) handleSSHSession(ch ssh.Channel, reqs <-chan *ssh.Request) error {
+	for req := range reqs {
+		switch req.Type {
+		case "shell":
+			{
+				return fmt.Errorf("FIXME: shell not implemented")
 			}
-			value, err := srv.h.Get(cmd.Args[0])
-			if err != nil {
-				return err
+		case "exec":
+			{
+				words := strings.Split(string(req.Payload[4:]), " ")
+				if len(words) == 0 {
+					return fmt.Errorf("no arguments")
+				}
+				handleExec := func(cmd string, args []string, stdout io.Writer) error {
+					defer ch.Close()
+					switch cmd {
+					case "get":
+						{
+							if len(args) != 1 {
+								return fmt.Errorf("usage: get VALUE")
+							}
+							value, err := db.Get(args[0])
+							if err != nil {
+								return err
+							}
+							fmt.Fprintf(stdout, "%s", value)
+						}
+					case "set":
+						{
+							if len(args) != 2 {
+								return fmt.Errorf("usage: set KEY VALUE")
+							}
+							_, err := db.Set(args[0], args[1])
+							if err != nil {
+								return err
+							}
+						}
+					case "list":
+						{
+							if len(args) != 1 {
+								return fmt.Errorf("usage: list KEY")
+							}
+							names, err := db.List(args[0])
+							if err != nil {
+								return err
+							}
+							for _, name := range names {
+								fmt.Fprint(stdout, name)
+							}
+						}
+					case "dump":
+						{
+							if len(args) != 0 {
+								return fmt.Errorf("usage: dump")
+							}
+							err := db.Dump(stdout)
+							if err != nil {
+								return err
+							}
+						}
+					case "hash":
+						{
+							if len(args) != 0 {
+								return fmt.Errorf("usage: hash")
+							}
+							hash, err := db.Hash()
+							if err != nil {
+								return err
+							}
+							fmt.Fprintf(stdout, "%s\n", hash)
+						}
+					case "ping":
+						{
+							fmt.Fprintf(stdout, "pong\n")
+						}
+					default:
+						{
+							return fmt.Errorf("exec: no such command: %s", cmd)
+						}
+					}
+					return nil
+				}
+				return handleExec(words[0], words[1:], ch)
 			}
-			fmt.Fprintf(cmd.Stdout, "%s", value)
-		}
-	case "set":
-		{
-			if len(cmd.Args) != 2 {
-				return fmt.Errorf("usage: set KEY VALUE")
-			}
-			_, err := srv.h.Set(cmd.Args[0], cmd.Args[1])
-			if err != nil {
-				return err
-			}
-		}
-	case "list":
-		{
-			if len(cmd.Args) != 1 {
-				return fmt.Errorf("usage: list KEY")
-			}
-			names, err := srv.h.List(cmd.Args[0])
-			if err != nil {
-				return err
-			}
-			for _, name := range names {
-				fmt.Fprint(cmd.Stdout, name)
-			}
-		}
-	case "dump":
-		{
-			if len(cmd.Args) != 0 {
-				return fmt.Errorf("usage: dump")
-			}
-			err := srv.h.Dump(cmd.Stdout)
-			if err != nil {
-				return err
-			}
-		}
-	case "hash":
-		{
-			if len(cmd.Args) != 0 {
-				return fmt.Errorf("usage: hash")
-			}
-			hash, err := srv.h.Hash()
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.Stdout, "%s\n", hash)
-		}
-	case "ping":
-		{
-			fmt.Fprintf(cmd.Stdout, "pong\n")
-		}
-	default:
-		{
-			return fmt.Errorf("unsupport command: %s", cmd.Name)
+		default:
+			return fmt.Errorf("unsupported session command")
 		}
 	}
 	return nil
-}
-
-func (srv *Server) serveChannel(channel ssh.Channel, requests <-chan *ssh.Request) {
-	for req := range requests {
-		if err := srv.handleChannelRequest(channel, req); err != nil {
-			req.Reply(false, nil)
-		} else {
-			req.Reply(true, nil)
-		}
-	}
 }
