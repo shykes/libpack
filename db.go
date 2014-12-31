@@ -21,6 +21,14 @@ func (db *DB) Name() string {
 	return db.ref
 }
 
+func (db *DB) Hash() (string, error) {
+	tree, err := db.getTree()
+	if err != nil {
+		return "", err
+	}
+	return tree.Hash(), nil
+}
+
 // Conveniences to query the underlying tree without explicitly
 // fetching it first every time.
 //
