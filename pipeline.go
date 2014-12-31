@@ -161,7 +161,18 @@ func OpAssertNotExist(key string) Op {
 
 func OpQuery(db *DB) Op {
 	return func(in *Tree) (*Tree, error) {
-		return db.getTree()
+		t, err := db.getTree()
+		// If the DB doesn't exist, return an empty tree.
+		if isGitNoRefErr(err) {
+			empty, err := db.Repo().EmptyTree()
+			if err != nil {
+				return nil, err
+			}
+			return empty, nil
+		} else if err != nil {
+			return nil, err
+		}
+		return t, nil
 	}
 }
 
