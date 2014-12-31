@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"regexp"
 	"time"
 
 	git "github.com/libgit2/git2go"
@@ -367,6 +368,22 @@ func isGitIterOver(err error) bool {
 		return false
 	}
 	return gitErr.Code == git.ErrIterOver
+}
+
+// IsGitNoRefErr returns a boolean indicating whether the error is known
+// to report that a git reference does not exist.
+func isGitNoRefErr(err error) bool {
+	// FIXME: this error does not seem to match git.GitError, so we
+	// rely on the text string to detect it. This is not ideal, better
+	// suggestions are welcome.
+	if err == nil {
+		return false
+	}
+	matched, err := regexp.MatchString("^Reference '[^']*' not found$", err.Error())
+	if err != nil {
+		return false
+	}
+	return matched
 }
 
 func lookupTree(r *git.Repository, id *git.Oid) (*git.Tree, error) {

@@ -1,6 +1,7 @@
 package libpack
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -80,6 +81,25 @@ func TestGitUpdateTree1(t *testing.T) {
 	}
 	assertBlobInTree(t, repo, t2b, "foo", "hello")
 	assertBlobInTree(t, repo, t2b, "bar", "hello")
+}
+
+func TestGitDetectNoRefError(t *testing.T) {
+	// Crude detection of "reference not found" errors
+	goodErr := fmt.Errorf("refs/heads/test: Reference 'refs/heads/test' not found")
+	{
+		detected := isGitNoRefErr(goodErr)
+		if !detected {
+			fmt.Errorf("False negative")
+		}
+	}
+
+	badErr := fmt.Errorf("something completely different")
+	{
+		detected := isGitNoRefErr(badErr)
+		if detected {
+			fmt.Errorf("False positive")
+		}
+	}
 }
 
 func assertBlobInTree(t *testing.T, repo *git.Repository, tree *git.Tree, key, value string) {
