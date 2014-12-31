@@ -93,7 +93,6 @@ func TestDBNamed(t *testing.T) {
 func TestDBSetTree(t *testing.T) {
 	r, db := tmpDB(t)
 	defer nukeRepo(r)
-	fmt.Printf("---> %s\n", r.gr.Path())
 
 	foobar := prepopulateTree(r, t, "foo", "bar")
 	var oldTree *Tree
@@ -306,13 +305,15 @@ func TestDBCommitConcurrentWithConflict(t *testing.T) {
 	}
 
 	db1.Set("foo", "A")
+	assertGet(t, db1.Query(), "foo", "A")
+	assertGet(t, db2.Query(), "foo", "A")
+
 	db2.Set("foo", "B")
+	assertGet(t, db1.Query(), "foo", "B")
+	assertGet(t, db2.Query(), "foo", "B")
 
 	db1.Set("1", "written by 1")
 	db1.Set("2", "written by 2")
-
-	assertGet(t, db1.Query(), "foo", "A")
-	assertGet(t, db2.Query(), "foo", "B")
 
 	r3, _ := Init(r1.gr.Path(), false)
 	db3, err := r3.DB(db1.Name())
@@ -328,18 +329,18 @@ func TestDBCommitConcurrentWithConflict(t *testing.T) {
 func TestDBSetCommitGet(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db, err := r.DB("test")
+	db1, err := r.DB("")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := db.Set("foo", "bar"); err != nil {
+	if _, err := db1.Set("foo", "bar"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Set("ga", "bu"); err != nil {
+	if _, err := db1.Set("ga", "bu"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Query().Set("ga", "added after commit").Run(); err != nil {
+	if _, err := db1.Query().Set("ga", "added after commit").Run(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -349,17 +350,17 @@ func TestDBSetCommitGet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err = r.DB("test")
+	db2, err := r.DB(db1.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if val, err := db.Get("foo"); err != nil {
+	if val, err := db2.Get("foo"); err != nil {
 		t.Fatal(err)
 	} else if val != "bar" {
 		t.Fatalf("%#v", val)
 	}
-	if val, err := db.Get("ga"); err != nil {
+	if val, err := db2.Get("ga"); err != nil {
 		t.Fatal(err)
 	} else if val != "bu" {
 		t.Fatalf("%#v", val)
@@ -369,7 +370,7 @@ func TestDBSetCommitGet(t *testing.T) {
 func TestDBSetGetNested(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
-	db, err := r.DB("test")
+	db, err := r.DB("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +396,7 @@ func testSetGet(t *testing.T, refs []string, scopes []string, components ...[]st
 		}
 
 		for _, scope := range scopes {
-			q := rootdb.Query().Scope(scope)
+			q := rootdb.Query().Mkdir(scope).Scope(scope)
 			if len(components) == 0 {
 				return
 			}

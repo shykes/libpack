@@ -95,30 +95,21 @@ func TestInitCreate(t *testing.T) {
 }
 
 func TestPush(t *testing.T) {
-	srcRepo := tmpRepo(t)
+	srcRepo, src := tmpDB(t)
 	defer nukeRepo(srcRepo)
 
-	src, err := srcRepo.DB("")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dstRepo := tmpRepo(t)
+	dstRepo, dst := tmpDB(t)
 	defer nukeRepo(dstRepo)
 
-	dst, err := dstRepo.DB("")
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	src.Set("foo/bar/baz", "hello world")
-	dst.Set("committed-key", "this should go away")
+
+	dst.Set("pre-push content in dst", "this should go away")
 
 	if err := srcRepo.Push(dstRepo.gr.Path(), src.Name(), dst.Name()); err != nil {
 		t.Fatal(err)
 	}
 
-	dst2, err := dstRepo.DB("")
+	dst2, err := dstRepo.DB(dst.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +125,7 @@ func TestPullToEmpty(t *testing.T) {
 	srcRepo := tmpRepo(t)
 	defer nukeRepo(srcRepo)
 
-	src, err := srcRepo.DB("samedb")
+	src, err := srcRepo.DB("refs/heads/samedb")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +133,7 @@ func TestPullToEmpty(t *testing.T) {
 	dstRepo := tmpRepo(t)
 	defer nukeRepo(dstRepo)
 
-	dst, err := dstRepo.DB("samedb")
+	dst, err := dstRepo.DB("refs/heads/samedb")
 	if err != nil {
 		t.Fatal(err)
 	}

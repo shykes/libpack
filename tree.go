@@ -82,6 +82,7 @@ func (t *Tree) SetStream(key string, src io.Reader) (*Tree, error) {
 }
 
 func (t *Tree) Mkdir(key string) (*Tree, error) {
+	// FIXME: specify the behavior of Mkdir when the key already exists.
 	return t.Pipeline().AddQuery(key, t.Pipeline().Empty(), true).Run()
 }
 
