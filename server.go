@@ -1,8 +1,10 @@
 package libpack
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 
@@ -136,6 +138,7 @@ reqLoop:
 		go ssh.DiscardRequests(reqs)
 		err := h(ch, req)
 		if err != nil {
+			log.Printf("channel handler returned an error: %v\n", err)
 			fmt.Fprintf(ch.Stderr(), "%v\n", err)
 			req.Reply(false, nil)
 		} else {
@@ -228,9 +231,61 @@ func (db *DB) handleExec(ch ssh.Channel, req *ssh.Request) error {
 
 func (db *DB) handleSubsystem(ch ssh.Channel, req *ssh.Request) error {
 	name := string(req.Payload[4:])
-	if name == "mirror" {
+	if name == "mirror-0.0.1@sandbox.docker.io" {
 		_, err := io.Copy(ch, ch)
 		return err
+	} else if name == "query-0.0.1@sandbox.docker.io" {
+		return db.serveQuery(ch, ch, ch.Stderr())
 	}
 	return fmt.Errorf("unsupported subsystem: %s", name)
+}
+
+type Command struct {
+	Op   string
+	Args []string
+}
+
+func (db *DB) serveQuery(in io.Reader, out io.Writer, stderr io.Writer) error {
+	jin := json.NewDecoder(in)
+	jout := json.NewEncoder(out)
+	p := NewPipeline(db.Repo())
+	for {
+		var cmd Command
+		if err := jin.Decode(&cmd); err != nil {
+			return err
+		}
+		fmt.Printf("--> OP = '%s' ARGS = '%v'\n", cmd.Op, cmd.Args)
+		switch cmd.Op {
+		case "query":
+			{
+				p.Query(db)
+			}
+		case "commit":
+			{
+				p.Commit(db)
+			}
+		case "run":
+			{
+				result, err := p.Run()
+				if err != nil {
+					return jout.Encode(&Command{Op: "error", Args: []string{err.Error()}})
+				}
+				return jout.Encode(&Command{Op: "sethash", Args: []string{result.Hash()}})
+			}
+		case "dump":
+			{
+				p.Dump(stderr)
+			}
+		case "scope":
+			{
+				if len(cmd.Args) != 1 {
+					return jout.Encode(&Command{Op: "error", Args: []string{"Usage: scope KEY"}})
+				}
+				p.Scope(cmd.Args[0])
+			}
+		default:
+			return jout.Encode(&Command{Op: "error", Args: []string{"no such command", cmd.Op}})
+		}
+	}
+	return nil
 }
