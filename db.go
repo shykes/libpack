@@ -49,30 +49,19 @@ func (db *DB) Dump(dst io.Writer) error {
 // For the full power of transactions, use DB.Transaction instead
 
 func (db *DB) Set(key, val string) (*Tree, error) {
-	return db.Transaction().Set(key, val).Run()
+	return db.Query().Set(key, val).Commit(db).Run()
 }
 
 func (db *DB) Mkdir(key string) (*Tree, error) {
-	return db.Transaction().Mkdir(key).Run()
+	return db.Query().Mkdir(key).Commit(db).Run()
 }
 
 func (db *DB) Delete(key string) (*Tree, error) {
-	return db.Transaction().Delete(key).Run()
+	return db.Query().Delete(key).Commit(db).Run()
 }
-
-// A transaction is just a Pipeline with some glue to commit
-// after a successful run. In other words: tree.go and pipeline.go
-// do all the glue work for us. And git does all the really hard work.
-// It feels good to be the top of the stack.
-
-func (db *DB) Transaction() *Pipeline {
-	return db.pipeline(true)
-}
-
-// A Query is just a pipeline which *does not* commit at the end.
 
 func (db *DB) Query() *Pipeline {
-	return db.pipeline(false)
+	return NewPipeline(db.r).Query(db)
 }
 
 func (db *DB) getTree() (*Tree, error) {
@@ -111,28 +100,4 @@ func (db *DB) setTree(t *Tree, old **Tree) (*Tree, error) {
 		return newTree, fmt.Errorf("Mismatched hash: %s instead of %s", newTree.Hash(), t.Hash())
 	}
 	return newTree, nil
-}
-
-func (db *DB) pipeline(commit bool) *Pipeline {
-	// FIXME: this can be done more cleanly by making Pipeline a linked list
-	// of abstract PipelineStep interfaces.
-	// The builtin steps (Add, Set, Delete etc.) can be added with the same
-	// convenience methods. But another call would allow adding arbitrary
-	// steps (which would be anything implementing the interface)
-	return NewPipeline(db.r).OnRun(func(p *Pipeline) (*Tree, error) {
-		// FIXME: we can add a scope pre-processor here.
-		// Get the current from the db
-		tree, err := db.getTree()
-		if err != nil {
-			return nil, err
-		}
-		// Use that value as the input of the pipeline
-		out, err := concat(tree.Pipeline(), p).Run()
-		// If commit==false, just return the result
-		if !commit {
-			return out, err
-		}
-		// If commit==true, write the result back to the db
-		return db.setTree(out, nil)
-	})
 }

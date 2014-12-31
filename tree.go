@@ -82,7 +82,7 @@ func (t *Tree) SetStream(key string, src io.Reader) (*Tree, error) {
 }
 
 func (t *Tree) Mkdir(key string) (*Tree, error) {
-	return t.Pipeline().Add(key, t.Pipeline().Empty(), true).Run()
+	return t.Pipeline().AddQuery(key, t.Pipeline().Empty(), true).Run()
 }
 
 func (t *Tree) Empty() (*Tree, error) {

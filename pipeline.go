@@ -1,9 +1,16 @@
 package libpack
 
 import (
+	"container/list"
 	"fmt"
 	"io"
 )
+
+type Query interface {
+	// FIXME: support a stream of multiple values
+	// FIXME: support Value results instead of just Tree
+	Run() (*Tree, error)
+}
 
 // A Pipeline defines a sequence of operations which can be run
 // to produce a libpack object.
@@ -21,288 +28,234 @@ import (
 //   combotree, _ := p2.Run()
 //
 type Pipeline struct {
-	r    *Repository // needed for Empty() when there is no input
-	prev *Pipeline
-	op   Op
-	arg  interface{}
-	run  PipelineHandler
+	*list.List
+	r *Repository
 }
-
-type PipelineHandler func(*Pipeline) (*Tree, error)
 
 func NewPipeline(r *Repository) *Pipeline {
 	return &Pipeline{
-		r:  r,
-		op: OpEmpty,
+		List: list.New(),
+		r:    r,
 	}
 }
 
-type addArg struct {
-	key     string
-	overlay interface{}
-	merge   bool
+func (p *Pipeline) PushBackPipeline(other *Pipeline) {
+	p.PushBackList(other.List)
 }
 
-type walkArg WalkHandler
-type dumpArg io.Writer
+func (p *Pipeline) PushFrontPipeline(other *Pipeline) {
+	p.PushFrontList(other.List)
+}
 
-// An Op defines an individual operation in a pipeline.
-type Op int
+// Run runs each step of the pipeline in sequence, each time passing
+// the output of step N as input to step N+1.
+// If an error is encountered, the pipeline is aborted.
+func (p *Pipeline) Run() (val *Tree, err error) {
+	val, err = p.r.EmptyTree()
+	if err != nil {
+		return
+	}
+	for e := p.Front(); e != nil; e = e.Next() {
+		op, ok := e.Value.(Op)
+		if !ok {
+			// Skip values which are not Ops.
+			// This is easier than overriding PushBack, PushFront etc to validate.
+			continue
+		}
+		val, err = op(val)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
 
-const (
-	OpEmpty Op = iota
-	OpNop
-	OpSet
-	OpMkdir
-	OpAdd
-	OpScope
-	OpDelete
-	OpWalk
-	OpDump
-	OpAssertEq
-	OpAssertNotExist
-)
+type Op func(in *Tree) (out *Tree, err error)
 
-func (t *Pipeline) OnRun(run PipelineHandler) *Pipeline {
-	return &Pipeline{
-		r:    t.r,
-		prev: t.prev,
-		op:   t.op,
-		arg:  t.arg,
-		run:  run,
+func OpEmpty() Op {
+	return func(in *Tree) (*Tree, error) {
+		return in.Repo().EmptyTree()
+	}
+}
+
+func OpNop() Op {
+	return func(in *Tree) (*Tree, error) {
+		return in, nil
+	}
+}
+
+func OpAdd(key string, overlay *Tree, merge bool) Op {
+	return func(in *Tree) (*Tree, error) {
+		return in.Add(key, overlay, merge)
+	}
+}
+
+func OpAddQuery(key string, q Query, merge bool) Op {
+	return func(in *Tree) (*Tree, error) {
+		overlay, err := q.Run()
+		if err != nil {
+			return nil, err
+		}
+		return OpAdd(key, overlay, merge)(in)
+	}
+}
+
+func OpDelete(key string) Op {
+	return func(in *Tree) (*Tree, error) {
+		return in.Delete(key)
+	}
+}
+
+func OpMkdir(key string) Op {
+	return func(in *Tree) (*Tree, error) {
+		return in.Mkdir(key)
+	}
+}
+
+func OpSet(key, val string) Op {
+	return func(in *Tree) (*Tree, error) {
+		return in.Set(key, val)
+	}
+}
+
+func OpScope(key string) Op {
+	return func(in *Tree) (*Tree, error) {
+		return in.Scope(key)
+	}
+}
+
+func OpWalk(h func(key string, entry Value) error) Op {
+	return func(in *Tree) (*Tree, error) {
+		return in, in.Walk(h)
+	}
+}
+
+func OpDump(dst io.Writer) Op {
+	return func(in *Tree) (*Tree, error) {
+		return in, in.Dump(dst)
+	}
+}
+
+func OpAssertEq(key, val string) Op {
+	return func(in *Tree) (*Tree, error) {
+		v, err := in.Get(key)
+		if err != nil {
+			return nil, err
+		}
+		if v != val {
+			return nil, fmt.Errorf("assertion failed: '%v == %v'", v, val)
+		}
+		return in, nil
+	}
+}
+
+func OpAssertNotExist(key string) Op {
+	return func(in *Tree) (*Tree, error) {
+		_, err := in.Get(key)
+		if err == nil {
+			return nil, fmt.Errorf("assertion failed: '%s is not set'", key)
+		}
+		return in, nil
+	}
+}
+
+func OpQuery(db *DB) Op {
+	return func(in *Tree) (*Tree, error) {
+		return db.getTree()
+	}
+}
+
+func OpCommit(db *DB) Op {
+	return func(in *Tree) (*Tree, error) {
+		return db.setTree(in, nil)
 	}
 }
 
 // Set appends a new `set` instruction to a pipeline, and
 // returns the new combined pipeline.
 // `set` writes `value` in a blob at path `key` in input trees.
-func (t *Pipeline) Set(key, value string) *Pipeline {
-	return t.setPrev(OpSet, []string{key, value})
+func (p *Pipeline) Set(key, value string) *Pipeline {
+	p.PushBack(OpSet(key, value))
+	return p
 }
 
-func (t *Pipeline) Empty() *Pipeline {
-	return t.setPrev(OpEmpty, nil)
+func (p *Pipeline) Empty() *Pipeline {
+	p.PushBack(OpEmpty())
+	return p
 }
 
 // Add appends a new `add` instruction to a pipeline, and
 // returns the new combined pipeline.
-// `add` inserts a git object in the input tree, at the pat 'key'.
-// The following types are supported for `val`:
-//  - git.Object: the specified object is added
-//  - *git.Oid: the object at the specified ID is added
-//  - *Pipeline: the specified pipeline is run, and the result is added
-func (t *Pipeline) Add(key string, overlay interface{}, merge bool) *Pipeline {
-	return t.setPrev(OpAdd, &addArg{
-		key:     key,
-		overlay: overlay,
-		merge:   merge,
-	})
+func (p *Pipeline) Add(key string, overlay *Tree, merge bool) *Pipeline {
+	p.PushBack(OpAdd(key, overlay, merge))
+	return p
 }
 
-func (t *Pipeline) Walk(h func(key string, entry Value) error) *Pipeline {
-	return t.setPrev(OpWalk, h)
+func (p *Pipeline) AddQuery(key string, q Query, merge bool) *Pipeline {
+	p.PushBack(OpAddQuery(key, q, merge))
+	return p
 }
 
-func (t *Pipeline) Dump(dst io.Writer) *Pipeline {
-	return t.setPrev(OpDump, dst)
+func (p *Pipeline) Walk(h func(key string, entry Value) error) *Pipeline {
+	p.PushBack(OpWalk(h))
+	return p
+}
+
+func (p *Pipeline) Dump(dst io.Writer) *Pipeline {
+	p.PushBack(OpDump(dst))
+	return p
 }
 
 // Delete appends a new `delete` instruction to a pipeline, then returns the
 // combined Pipeline.
-func (t *Pipeline) Delete(key string) *Pipeline {
-	return t.setPrev(OpDelete, key)
+func (p *Pipeline) Delete(key string) *Pipeline {
+	p.PushBack(OpDelete(key))
+	return p
 }
 
 // Mkdir appends a new `mkdir` instruction to a pipeline, and
 // returns the new combined pipeline.
 // `mkdir` inserts an empty subtree in the input tree, at
 // the path `key`.
-func (t *Pipeline) Mkdir(key string) *Pipeline {
-	return t.setPrev(OpMkdir, key)
+func (p *Pipeline) Mkdir(key string) *Pipeline {
+	p.PushBack(OpMkdir(key))
+	return p
 }
 
-func (t *Pipeline) Scope(key string) *Pipeline {
-	return t.setPrev(OpScope, key)
+func (p *Pipeline) Scope(key string) *Pipeline {
+	p.PushBack(OpScope(key))
+	return p
 }
 
-func (t *Pipeline) AssertEq(key, val string) *Pipeline {
-	return t.setPrev(OpAssertEq, []string{key, val})
+func (p *Pipeline) AssertEq(key, val string) *Pipeline {
+	p.PushBack(OpAssertEq(key, val))
+	return p
 }
 
-func (t *Pipeline) AssertNotExist(key string) *Pipeline {
-	return t.setPrev(OpAssertNotExist, key)
+func (p *Pipeline) AssertNotExist(key string) *Pipeline {
+	p.PushBack(OpAssertNotExist(key))
+	return p
 }
 
-// Run runs each step of the pipeline in sequence, each time passing
-// the output of step N as input to step N+1.
-// If an error is encountered, the pipeline is aborted.
-func (t *Pipeline) Run() (out *Tree, err error) {
-	if t.run != nil {
-		return t.run(t.OnRun(nil))
-	}
-	var in *Tree
-	// Call the previous operation before our own
-	// (unless the current operation is Empty or Nop, since they would
-	// discard the result anyway)
-	if t.prev != nil && t.op != OpEmpty && t.op != OpNop {
-		prevOut, err := t.prev.Run()
-		if err != nil {
-			return nil, err
-		}
-		in = prevOut
-	}
-	switch t.op {
-	case OpEmpty:
-		{
-			return t.r.EmptyTree()
-		}
-	case OpNop:
-		{
-			return in, nil
-		}
-	case OpAdd:
-		{
-			arg, ok := t.arg.(*addArg)
-			if !ok {
-				return nil, fmt.Errorf("add: invalid argument: %v", t.arg)
-			}
-			switch overlay := arg.overlay.(type) {
-			case *Tree:
-				{
-					return in.Add(arg.key, overlay, arg.merge)
-				}
-			case *Pipeline:
-				{
-					out, err := overlay.Run()
-					if err != nil {
-						return nil, err
-					}
-					return in.Add(arg.key, out, arg.merge)
-				}
-			}
-			return nil, fmt.Errorf("invalid overlay argument to add: %#v", arg.overlay)
-		}
-	case OpDelete:
-		{
-			key, ok := t.arg.(string)
-			if !ok {
-				return nil, fmt.Errorf("delete: invalid argument: %v", t.arg)
-			}
-			return in.Delete(key)
-		}
-	case OpMkdir:
-		{
-			key, ok := t.arg.(string)
-			if !ok {
-				return nil, fmt.Errorf("mkdir: invalid argument: %v", t.arg)
-			}
-			return in.Mkdir(key)
-		}
-	case OpSet:
-		{
-			kv, ok := t.arg.([]string)
-			if !ok {
-				return nil, fmt.Errorf("set: invalid argument")
-			}
-			if len(kv) != 2 {
-				return nil, fmt.Errorf("set: invalid argument")
-			}
-			return in.Set(kv[0], kv[1])
-		}
-	case OpScope:
-		{
-			key, ok := t.arg.(string)
-			if !ok {
-				return nil, fmt.Errorf("scope: invalid argument: %v", t.arg)
-			}
-			return in.Scope(key)
-		}
-	case OpWalk:
-		{
-			h, ok := t.arg.(walkArg)
-			if !ok {
-				return nil, fmt.Errorf("walk: invalid argument: %v", t.arg)
-			}
-			return in, in.Walk(WalkHandler(h))
-		}
-	case OpDump:
-		{
-			dst, ok := t.arg.(dumpArg)
-			if !ok {
-				return nil, fmt.Errorf("dump: invalid argument: %v", t.arg)
-			}
-			return in, in.Dump(dst)
-		}
-	case OpAssertEq:
-		{
-			kv, ok := t.arg.([]string)
-			if !ok {
-				return nil, fmt.Errorf("asserteq: invalid argument")
-			}
-			if len(kv) != 2 {
-				return nil, fmt.Errorf("asserteq: invalid argument")
-			}
-			val, err := in.Get(kv[0])
-			if err != nil {
-				return nil, err
-			}
-			if val != kv[1] {
-				return nil, fmt.Errorf("assertion failed: '%v == %v'", val, kv[1])
-			}
-			return in, nil
-		}
-	case OpAssertNotExist:
-		{
-			key, ok := t.arg.(string)
-			if !ok {
-				return nil, fmt.Errorf("assertnotexist: invalid argument")
-			}
-			_, err := in.Get(key)
-			if err == nil {
-				return nil, fmt.Errorf("assertion failed: '%s is not set'", key)
-			}
-			return in, nil
-		}
-	}
-	return nil, fmt.Errorf("invalid op: %v", t.op)
+func (p *Pipeline) Query(db *DB) *Pipeline {
+	p.PushBack(OpQuery(db))
+	return p
 }
 
-func (t *Pipeline) Get(key string) (string, error) {
-	out, err := t.Run()
+func (p *Pipeline) Commit(db *DB) *Pipeline {
+	p.PushBack(OpCommit(db))
+	return p
+}
+
+func (p *Pipeline) Func(f Op) *Pipeline {
+	p.PushBack(f)
+	return p
+}
+
+func (p *Pipeline) Get(key string) (string, error) {
+	out, err := p.Run()
 	if err != nil {
 		return "", err
 	}
 	return out.Get(key)
-}
-
-func (t *Pipeline) List(key string) ([]string, error) {
-	out, err := t.Run()
-	if err != nil {
-		return nil, err
-	}
-	return out.List(key)
-}
-
-func (t *Pipeline) setPrev(op Op, arg interface{}) *Pipeline {
-	return &Pipeline{
-		r:    t.r,
-		prev: t,
-		op:   op,
-		arg:  arg,
-	}
-}
-
-func concat(p1, p2 *Pipeline) *Pipeline {
-	if p1 == nil {
-		return p2
-	}
-	if p2 == nil {
-		return p1
-	}
-	// FIXME: use a linked list to make this cheaper
-	var step *Pipeline
-	for step = p2; step.prev != nil; step = step.prev {
-	}
-	step.prev = p1
-	return p2
 }

@@ -95,7 +95,7 @@ func TestPipelineAdd(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
 	foobar := NewPipeline(r).Set("foo", "bar")
-	tree, err := NewPipeline(r).Set("hello", "world").Set("foo", "abc").Add("subdir", foobar, true).Run()
+	tree, err := NewPipeline(r).Set("hello", "world").Set("foo", "abc").AddQuery("subdir", foobar, true).Run()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,34 +141,6 @@ func TestPipelineDump(t *testing.T) {
 	}
 }
 
-func TestPipelineOnRun(t *testing.T) {
-	r := tmpRepo(t)
-	defer nukeRepo(r)
-
-	var called bool
-	run := func(p *Pipeline) (*Tree, error) {
-		called = true
-		return p.Run()
-	}
-	p1 := NewPipeline(r)
-	p2 := NewPipeline(r).OnRun(run)
-
-	t1, err := p1.Run()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t2, err := p2.Run()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if t1.Hash() != t2.Hash() {
-		t.Fatalf("%s != %s\n", t1.Hash(), t2.Hash())
-	}
-	if !called {
-		t.Fatalf("run handler not called")
-	}
-}
-
 func TestPipelineConcat(t *testing.T) {
 	r := tmpRepo(t)
 	defer nukeRepo(r)
@@ -181,7 +153,9 @@ func TestPipelineConcat(t *testing.T) {
 	step2 := NewPipeline(r).Set("hello", "world")
 	assertGet(t, step2, "hello", "world")
 
-	p := concat(step1, step2)
+	p := NewPipeline(r)
+	p.PushBackPipeline(step1)
+	p.PushBackPipeline(step2)
 	assertGet(t, p, "foo", "bar")
 	assertGet(t, p, "hello", "world")
 
