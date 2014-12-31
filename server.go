@@ -12,7 +12,7 @@ import (
 
 type SSHHandler interface {
 	AcceptSSH(chType, chArg string) bool
-	HandleSSH(chType, chArg string, ch ssh.Channel, reqs <-chan *ssh.Request) error
+	HandleSSH(chType, chArg string, ch ssh.Channel, reqs <-chan *ssh.Request)
 }
 
 func GenerateKey() (ssh.Signer, error) {
@@ -86,9 +86,7 @@ func (srv *Server) ServeConn(conn net.Conn) error {
 		// FIXME: use context.Context to cleanly synchronize with handlers, block on them
 		// but still be able to terminate them gracefully.
 		go func(ch ssh.Channel, reqs <-chan *ssh.Request) {
-			if err := srv.h.HandleSSH(chType, chArg, ch, reqs); err != nil {
-				fmt.Fprintf(ch.Stderr(), "--> %v\n", err)
-			}
+			srv.h.HandleSSH(chType, chArg, ch, reqs)
 			ch.Close()
 		}(ch, reqs)
 	}
@@ -98,106 +96,141 @@ func (srv *Server) ServeConn(conn net.Conn) error {
 // DB implements SSHHandler, awesome!
 
 func (db *DB) AcceptSSH(chType, chArg string) bool {
-	if chType == "session" {
-		return true
-	}
-	return false
+	return chType == "session"
 }
 
-func (db *DB) HandleSSH(chType, chArg string, ch ssh.Channel, reqs <-chan *ssh.Request) error {
-	if chType == "session" {
-		return db.handleSSHSession(ch, reqs)
+func (db *DB) HandleSSH(chType, chArg string, ch ssh.Channel, reqs <-chan *ssh.Request) {
+	if chType != "session" {
+		// unsupported channel type
+		return
 	}
-	return fmt.Errorf("unsupported channel type: %s", chType)
-}
-
-func (db *DB) handleSSHSession(ch ssh.Channel, reqs <-chan *ssh.Request) error {
-	for req := range reqs {
+	var (
+		h   func(ssh.Channel, *ssh.Request) error
+		req *ssh.Request
+	)
+reqLoop:
+	for req = range reqs {
 		switch req.Type {
+		// All 3 main session requests (shell, subsystem, exec)
 		case "shell":
 			{
-				return fmt.Errorf("FIXME: shell not implemented")
+				h = db.handleShell
+				break reqLoop
+			}
+		case "subsystem":
+			{
+				h = db.handleSubsystem
+				break reqLoop
 			}
 		case "exec":
 			{
-				words := strings.Split(string(req.Payload[4:]), " ")
-				if len(words) == 0 {
-					return fmt.Errorf("no arguments")
-				}
-				handleExec := func(cmd string, args []string, stdout io.Writer) error {
-					defer ch.Close()
-					switch cmd {
-					case "get":
-						{
-							if len(args) != 1 {
-								return fmt.Errorf("usage: get VALUE")
-							}
-							value, err := db.Get(args[0])
-							if err != nil {
-								return err
-							}
-							fmt.Fprintf(stdout, "%s", value)
-						}
-					case "set":
-						{
-							if len(args) != 2 {
-								return fmt.Errorf("usage: set KEY VALUE")
-							}
-							_, err := db.Set(args[0], args[1])
-							if err != nil {
-								return err
-							}
-						}
-					case "list":
-						{
-							if len(args) != 1 {
-								return fmt.Errorf("usage: list KEY")
-							}
-							names, err := db.List(args[0])
-							if err != nil {
-								return err
-							}
-							for _, name := range names {
-								fmt.Fprint(stdout, name)
-							}
-						}
-					case "dump":
-						{
-							if len(args) != 0 {
-								return fmt.Errorf("usage: dump")
-							}
-							err := db.Dump(stdout)
-							if err != nil {
-								return err
-							}
-						}
-					case "hash":
-						{
-							if len(args) != 0 {
-								return fmt.Errorf("usage: hash")
-							}
-							hash, err := db.Hash()
-							if err != nil {
-								return err
-							}
-							fmt.Fprintf(stdout, "%s\n", hash)
-						}
-					case "ping":
-						{
-							fmt.Fprintf(stdout, "pong\n")
-						}
-					default:
-						{
-							return fmt.Errorf("exec: no such command: %s", cmd)
-						}
-					}
-					return nil
-				}
-				return handleExec(words[0], words[1:], ch)
+				h = db.handleExec
+				break reqLoop
 			}
 		default:
-			return fmt.Errorf("unsupported session command")
+			fmt.Fprintf(ch.Stderr(), "unsupported channel request: %s\n", req.Type)
+			req.Reply(false, nil)
+		}
+	}
+	if h != nil {
+		go ssh.DiscardRequests(reqs)
+		err := h(ch, req)
+		if err != nil {
+			fmt.Fprintf(ch.Stderr(), "%v\n", err)
+			req.Reply(false, nil)
+		} else {
+			req.Reply(true, nil)
+		}
+	}
+}
+
+func (db *DB) handleShell(ch ssh.Channel, req *ssh.Request) error {
+	return fmt.Errorf("FIXME: shell not implemented")
+}
+
+func (db *DB) handleExec(ch ssh.Channel, req *ssh.Request) error {
+	words := strings.Split(string(req.Payload[4:]), " ")
+	if len(words) == 0 {
+		return fmt.Errorf("no arguments")
+	}
+	var (
+		cmd    = words[0]
+		args   = words[1:]
+		stdout = ch
+	)
+	switch cmd {
+	case "get":
+		{
+			if len(args) != 1 {
+				return fmt.Errorf("usage: get VALUE")
+			}
+			value, err := db.Get(args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "%s", value)
+		}
+	case "set":
+		{
+			if len(args) != 2 {
+				return fmt.Errorf("usage: set KEY VALUE")
+			}
+			_, err := db.Set(args[0], args[1])
+			if err != nil {
+				return err
+			}
+		}
+	case "list":
+		{
+			if len(args) != 1 {
+				return fmt.Errorf("usage: list KEY")
+			}
+			names, err := db.List(args[0])
+			if err != nil {
+				return err
+			}
+			for _, name := range names {
+				fmt.Fprint(stdout, name)
+			}
+		}
+	case "dump":
+		{
+			if len(args) != 0 {
+				return fmt.Errorf("usage: dump")
+			}
+			err := db.Dump(stdout)
+			if err != nil {
+				return err
+			}
+		}
+	case "hash":
+		{
+			if len(args) != 0 {
+				return fmt.Errorf("usage: hash")
+			}
+			hash, err := db.Hash()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "%s\n", hash)
+		}
+	case "ping":
+		{
+			fmt.Fprintf(stdout, "pong\n")
+		}
+	default:
+		{
+			return fmt.Errorf("exec: no such command: %s", cmd)
 		}
 	}
 	return nil
+}
+
+func (db *DB) handleSubsystem(ch ssh.Channel, req *ssh.Request) error {
+	name := string(req.Payload[4:])
+	if name == "mirror" {
+		_, err := io.Copy(ch, ch)
+		return err
+	}
+	return fmt.Errorf("unsupported subsystem: %s", name)
 }
