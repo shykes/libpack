@@ -12,6 +12,11 @@ type DB struct {
 	l   sync.RWMutex
 }
 
+// Repo returns the repository backing db.
+func (db *DB) Repo() *Repository {
+	return db.r
+}
+
 func (db *DB) Name() string {
 	return db.ref
 }
