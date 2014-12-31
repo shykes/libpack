@@ -60,6 +60,35 @@ func prepopulateTree(r *Repository, t *testing.T, key, value string) *Tree {
 	return tree
 }
 
+func TestDBNamed(t *testing.T) {
+	r := tmpRepo(t)
+	defer nukeRepo(r)
+
+	names := []struct {
+		string
+		Good bool
+	}{
+		{"", true},
+		{"refs/heads/test", true},
+		{"refs/heads/foo/bar/baz", true},
+		{"refs/something/hello", true},
+		{"test", false},
+	}
+	for _, name := range names {
+		db, err := r.DB(name.string)
+		if err != nil {
+			t.Fatalf("%s: %v", name.string, err)
+		}
+		_, err = db.Set("foo", "bar")
+		if name.Good && err != nil {
+			t.Fatal(err)
+		}
+		if !name.Good && err == nil {
+			t.Fatalf("name '%s' should trigger an error", name.string)
+		}
+	}
+}
+
 // DB.setTree is private but central to the DB logic
 func TestDBSetTree(t *testing.T) {
 	r, db := tmpDB(t)
