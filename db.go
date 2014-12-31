@@ -79,7 +79,9 @@ func (db *DB) getTree() (*Tree, error) {
 
 func (db *DB) setTree(t *Tree, old **Tree) (*Tree, error) {
 	head, err := gitCommitFromRef(db.r.gr, db.ref)
-	if err != nil {
+	if isGitNoRefErr(err) {
+		head = nil
+	} else if err != nil {
 		return nil, err
 	}
 	if old != nil {
