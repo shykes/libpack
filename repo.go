@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/docker/libpack/pkg/dssh"
 	git "github.com/libgit2/git2go"
 )
 
 type Repository struct {
 	gr *git.Repository // `gr` stands for "git repository"
+	*dssh.Server
 }
 
 func Init(dir string, create bool) (*Repository, error) {
@@ -33,9 +35,16 @@ func Init(dir string, create bool) (*Repository, error) {
 }
 
 func newRepository(gr *git.Repository) (*Repository, error) {
-	return &Repository{
+	r := &Repository{
 		gr: gr,
-	}, nil
+	}
+	// FIXME: load keypair from a special "meta" db in the repo
+	key, err := dssh.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+	r.Server = dssh.NewServer(key, dssh.SimpleHandler(r))
+	return r, nil
 }
 
 func (r *Repository) DB(ref string) (*DB, error) {

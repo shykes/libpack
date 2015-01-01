@@ -14,22 +14,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Opening DB '%s'\n", "refs/heads/db")
-	db, err := repo.DB("refs/heads/db")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Generating keypair\n")
-	key, err := libpack.GenerateKey()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	srv := libpack.NewServer(key, db)
-
 	fmt.Printf("Listening on tcp://0.0.0.0:4242\n")
-	if err := srv.ListenAndServe("tcp", "0.0.0.0:4242"); err != nil {
+	if err := repo.ListenAndServe("tcp", "0.0.0.0:4242"); err != nil {
 		log.Fatal(err)
 	}
 }
