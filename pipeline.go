@@ -2,6 +2,7 @@ package libpack
 
 import (
 	"container/list"
+	"encoding/json"
 	"fmt"
 	"io"
 )
@@ -44,6 +45,18 @@ func NewPipeline(r *Repository) *Pipeline {
 		List: list.New(),
 		r:    r,
 	}
+}
+
+func sendErrorf(jout *json.Encoder, msg string, args ...interface{}) error {
+	return jout.Encode(&Command{Op: "error", Args: []string{fmt.Sprintf(msg, args...)}})
+}
+
+func sendError(jout *json.Encoder, err error) error {
+	return jout.Encode(&Command{Op: "error", Args: []string{err.Error()}})
+}
+
+func sendCmd(jout *json.Encoder, op string, args ...string) error {
+	return jout.Encode(&Command{Op: op, Args: args})
 }
 
 func (p *Pipeline) PushBackPipeline(other *Pipeline) {
@@ -299,4 +312,71 @@ func OpCommit(db *DB) Op {
 	return func(in *Tree) (*Tree, error) {
 		return db.setTree(in, nil)
 	}
+}
+
+type Command struct {
+	Op   string
+	Args []string
+}
+
+// Communicate exposes pipeline functionality over a simple wire protocol. It can be used
+// by external programs to easily manipulate a repository, over IPC or over the network.
+func (p *Pipeline) Communicate(in io.Reader, out io.Writer, stderr io.Writer) error {
+	jin := json.NewDecoder(in)
+	jout := json.NewEncoder(out)
+	for {
+		var cmd Command
+		if err := jin.Decode(&cmd); err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+		fmt.Printf("--> OP = '%s' ARGS = '%v'\n", cmd.Op, cmd.Args)
+		switch cmd.Op {
+		case "from":
+			{
+				if len(cmd.Args) != 1 {
+					return sendErrorf(jout, "usage: query DBNAME")
+				}
+				db, err := p.r.DB(cmd.Args[0])
+				if err != nil {
+					return sendError(jout, err)
+				}
+				p.Query(db)
+			}
+		case "to":
+			{
+				if len(cmd.Args) != 1 {
+					return sendErrorf(jout, "usage: commit DBNAME")
+				}
+				db, err := p.r.DB(cmd.Args[0])
+				if err != nil {
+					return sendError(jout, err)
+				}
+				p.Commit(db)
+			}
+		case "run":
+			{
+				break
+			}
+		case "dump":
+			{
+				p.Dump(stderr)
+			}
+		case "scope":
+			{
+				if len(cmd.Args) != 1 {
+					return sendErrorf(jout, "Usage: scope KEY")
+				}
+				p.Scope(cmd.Args[0])
+			}
+		default:
+			return sendErrorf(jout, "no such command: %s", cmd.Op)
+		}
+	}
+	result, err := p.Run()
+	if err != nil {
+		return sendError(jout, err)
+	}
+	return sendCmd(jout, "sethash", result.Hash())
 }
